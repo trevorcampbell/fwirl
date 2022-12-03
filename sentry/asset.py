@@ -1,5 +1,6 @@
 from enum import Enum
 from abc import abstractmethod
+from loguru import logger
 
 class AssetStatus(Enum):
     Current = 0
@@ -11,14 +12,18 @@ class AssetStatus(Enum):
     Failed = 6
 
 class Asset:
-    def __init__(self):
+    def __init__(self, key, dependencies):
+        self.key = key
+        self.dependencies = dependencies
         self.status = AssetStatus.Unavailable
         self.message = ""
-        self.key = "blah"
-        self._cached_timestamp = None
+        self._cached_timestamp = AssetStatus.Unavailable
 
     def __hash__(self):
-        return self.key
+        return hash(self.key)
+
+    def __repr__(self):
+        return self.__class__.__name__ + f"({self.key})"
 
     def get_key(self):
         return self.key
@@ -38,22 +43,22 @@ class Asset:
         # if returns an object, gets serialized and stored in db
         return
 
-# assets that are may be modified asynchronously by external actors
-class ExposedAsset(Asset):
-
-    def build(self):
-        pass
-
-    def get_timestamp(self):
-        # compare value
-        # return timestamp if exists
-        # return AssetStatus.Unavailable if not
-        return
-
-# assets that are just internal to sentry and cannot be modified by external actors
-# i.e. serializable, stored in our DB
-class InternalAsset(Asset):
-    pass
+## assets that are may be modified asynchronously by external actors
+#class ExposedAsset(Asset):
+#
+#    def build(self):
+#        pass
+#
+#    def get_timestamp(self):
+#        # compare value
+#        # return timestamp if exists
+#        # return AssetStatus.Unavailable if not
+#        return
+#
+## assets that are just internal to sentry and cannot be modified by external actors
+## i.e. serializable, stored in our DB
+#class InternalAsset(Asset):
+#    pass
 
 
 
