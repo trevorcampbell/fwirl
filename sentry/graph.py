@@ -28,16 +28,29 @@ class AssetGraph:
         #graph.nodes[asset_key]
 
     def add_assets(self, assets):
+        logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")
+        edges = []
         for a in assets:
-            edges = [(d, a) for d in a.dependencies]
-            logger.info(f"Added edges {edges} to asset graph")
-            self.graph.add_edges_from([(d, a) for d in a.dependencies])
+            edges.extend([(d, a) for d in a.dependencies])
+        logger.info(f"Adding {len(edges)} edges, {len(assets)} assets, and upstream assets to the graph")
+        #logger.info(f"Adding {len(edges)} edges to asset graph")
+        old_edges = self.graph.size()
+        old_nodes = self.graph.number_of_nodes()
+        self.graph.add_edges_from(edges)
+        new_edges = self.graph.size()
+        new_nodes = self.graph.number_of_nodes()
+        logger.info(f"Added {new_nodes-old_nodes} assets and {new_edges-old_edges} edges to the graph")
         self.stale_node_positions = True
 
     def remove_assets(self, assets):
-        logger.info(f"Removed assets {assets} from asset graph")
+        logger.info(f"Removing {len(assets)} assets and downstream assets from graph")
+        old_edges = self.graph.size()
+        old_nodes = self.graph.number_of_nodes()
         self.graph.remove_nodes_from(assets)
+        new_edges = self.graph.size()
+        new_nodes = self.graph.number_of_nodes()
         self.stale_node_positions = True
+        logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
 
     def propagate_status(self):
         # Status propagates using the following cascade of rules:
@@ -132,9 +145,12 @@ class AssetGraph:
         return
 
     def visualize(self):
+        logger.info("Visualizing asset graph")
         if self.stale_node_positions:
+            logger.info("Node positions have changed; repositioning")
             #self.pos = nx.multipartite_layout(self.graph)
             self.pos = nx.planar_layout(self.graph)
+        logger.info("Drawing the graph")
         node_colors = [_NODE_COLORS[asset.status] for asset in self.graph]
         nx.draw(self.graph, pos=self.pos, node_color=node_colors)
         plt.show()
