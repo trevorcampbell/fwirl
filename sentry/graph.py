@@ -145,7 +145,14 @@ class AssetGraph:
         return
 
     def visualize(self):
+        # in order to visualize large graphs
+        # collapse all subgroups within a group with all constant state 
         logger.info("Visualizing asset graph")
+        # TODO traverse graph, build dict of [group][subgroup] -> [nodes]
+        # TODO check which subgroups have all nodes with the same state
+        # TODO build quotient_graph for all nodes in a group with a constant-state subgroup
+
+
         if self.stale_node_positions:
             logger.info("Node positions have changed; repositioning")
             #self.pos = nx.multipartite_layout(self.graph)
@@ -154,6 +161,7 @@ class AssetGraph:
         node_colors = [_NODE_COLORS[asset.status] for asset in self.graph]
         nx.draw(self.graph, pos=self.pos, node_color=node_colors)
         plt.show()
+
 
 
 

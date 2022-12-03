@@ -12,7 +12,7 @@ class AssetStatus(Enum):
     Failed = 6
 
 class Asset:
-    def __init__(self, key, dependencies):
+    def __init__(self, key, dependencies, viz_group = None, viz_subgroup = None):
         self.key = key
         self.hash = hash(key)
         self.dependencies = dependencies
