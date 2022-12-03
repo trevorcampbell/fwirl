@@ -33,13 +33,12 @@ class AssetGraph:
         for a in assets:
             edges.extend([(d, a) for d in a.dependencies])
         logger.info(f"Adding {len(edges)} edges, {len(assets)} assets, and upstream assets to the graph")
-        #logger.info(f"Adding {len(edges)} edges to asset graph")
         old_edges = self.graph.size()
         old_nodes = self.graph.number_of_nodes()
         self.graph.add_edges_from(edges)
         new_edges = self.graph.size()
         new_nodes = self.graph.number_of_nodes()
-        logger.info(f"Added {new_nodes-old_nodes} assets and {new_edges-old_edges} edges to the graph")
+        logger.info(f"Added {new_nodes-old_nodes} unique assets and {new_edges-old_edges} unique edges to the graph")
         self.stale_node_positions = True
 
     def remove_assets(self, assets):
@@ -117,6 +116,7 @@ class AssetGraph:
                     asset.status = AssetStatus.Failed
                     asset.message = "Build failed: exception during build"
                     logger.exception(f"Asset {asset} build failed (status: {asset.status}): error in-build")
+                    continue
 
                 # refresh the timestamp cache
                 ts = asset._timestamp()

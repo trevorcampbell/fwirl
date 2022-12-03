@@ -14,13 +14,17 @@ class AssetStatus(Enum):
 class Asset:
     def __init__(self, key, dependencies):
         self.key = key
+        self.hash = hash(key)
         self.dependencies = dependencies
         self.status = AssetStatus.Unavailable
         self.message = ""
         self._cached_timestamp = AssetStatus.Unavailable
 
     def __hash__(self):
-        return hash(self.key)
+        return self.hash
+
+    def __eq__(self, rhs):
+        return self.hash == rhs.hash
 
     def __repr__(self):
         return self.__class__.__name__ + f"({self.key})"
