@@ -175,7 +175,7 @@ class AssetGraph:
         return
 
     def _collect_groups(self):
-        logger.debug("Collecting node groups")
+        logger.debug("Collecting node (sub)groups")
         groupings = defaultdict(list)
         for asset in self.graph:
             if asset.group == '__singletons__' or asset.subgroup == '__singletons__':
@@ -189,6 +189,16 @@ class AssetGraph:
                     groupings[asset.group]['__singletons__'].append(asset)
             else:
                 groupings['__singletons__'].append(asset) 
+        # topologically sort the subgraphs
+        logger.debug("Topologically sorting subgroups")
+        for gr in groupings:
+            if gr == '__singletons__':
+                sg = self.graph.subgraph(groupings[gr])
+                groupings[gr] = list(nx.topological_sort(sg))
+                continue
+            for sb in groupings[gr]:
+                sg = self.graph.subgraph(groupings[gr][sb])
+                groupings[gr][sb] = list(nx.topological_sort(sg))
         return groupings
     
     def summarize(self):
