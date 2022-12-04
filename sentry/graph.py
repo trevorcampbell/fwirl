@@ -2,6 +2,7 @@ import networkx as nx
 from loguru import logger
 from .asset import AssetStatus
 import matplotlib.pyplot as plt
+from collections import Counter
 #import notifiers
 
 _NODE_COLORS = {AssetStatus.Current : "tab:green",
@@ -16,6 +17,7 @@ _NODE_COLORS = {AssetStatus.Current : "tab:green",
 class AssetGraph:
     def __init__(self):
         self.graph = nx.DiGraph()
+        self.vizgraph = None
         self.pos = None
         self._stale_viz = True
         self._stale_topological_sort = True
@@ -29,6 +31,9 @@ class AssetGraph:
         asset_queue.extend(assets)
         while len(asset_queue) != 0:
             a = asset_queue.pop()
+            if a in a.dependencies:
+                # TODO test this check...
+                raise ValueError("Self-dependency loop detected!")
             if a in unq_assets or a in self.graph:
                 continue
             unq_assets.add(a)
@@ -116,7 +121,8 @@ class AssetGraph:
             self._cached_topological_sort = list(nx.topological_sort(self.graph))
             self._stale_topological_sort = False
         for asset in self._cached_topological_sort:
-            logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {[p.status for p in self.graph.predecessors(asset)]}")
+            parent_status_cts = Counter([p.status for p in self.graph.predecessors(asset)])
+            logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {list(parent_status_cts.items())}")
             if (asset.status == AssetStatus.Unavailable or asset.status == AssetStatus.Stale) and all(p.status == AssetStatus.Current for p in self.graph.predecessors(asset)):
                 logger.info(f"Asset {asset} is {asset.status} and all parents are current; rebuilding")
                 # set building status
@@ -163,33 +169,55 @@ class AssetGraph:
         # in order to visualize large graphs
         # collapse all subgroups within a group with all constant state 
         logger.info("Visualizing asset graph") 
+        # TODO can't cache vizgraph since structure changes whenever status changes...
         if self._stale_viz:
-            #logger.info("Asset graph structure changed; recomputing quotient graph structure and node positions")
-            #groupings = {}
-            #for asset in self.graph:
-            #    if asset.group and asset.subgroup:
-            #        if asset.group not in groupings:
-            #            groupings[asset.group] = {}
-            #        if asset.subgroup not in groupings[asset.group]:
-            #            groupings[asset.group][asset.subgroup] = []
-            #        groupings[asset.group][asset.subgroup].append(asset)
-            #for group in groupings:
-            #    for subgroup in groupings[group]:
-            #        if len({asset.status for asset in groupings[group][subgroup]}) == 1:
-            #            for asset in groupings[group][subgroup]:
-            #                asset.vizgroup = 3
-            #        
-            #nx.quotient_graph(self.graph, partition = lambda u, v : u.group
-            ## TODO traverse graph, build dict of [group][subgroup] -> [nodes]
-            ## TODO check which subgroups have all nodes with the same state
-            ## TODO build quotient_graph for all nodes in a group with a constant-state subgroup
-
-            #self.pos = nx.multipartite_layout(self.graph)
-            self.pos = nx.planar_layout(self.graph)
+            logger.info("Asset graph structure changed; recomputing quotient graph structure and node positions")
+            groupings = {}
+            logger.info("Assembling viznodes")
+            for asset in self.graph:
+                # if the asset is part of a group,subgroup
+                if (asset.group is not None) and (asset.subgroup is not None):
+                    # collect assets in each group/subgroup
+                    if asset.group not in groupings:
+                        groupings[asset.group] = {}
+                    if asset.subgroup not in groupings[asset.group]:
+                        groupings[asset.group][asset.subgroup] = []
+                    groupings[asset.group][asset.subgroup].append(asset)
+                else:
+                    #ungrouped assets get their own viznodes
+                    asset.viznode = ("single",asset.hash,asset.status)
+            # for grouped assets, merge into one viznode if status is the same across the subgroup
+            for group in groupings:
+                for subgroup in groupings[group]:
+                    if len({asset.status for asset in groupings[group][subgroup]}) == 1:
+                        for asset in groupings[group][subgroup]:
+                            asset.viznode = ("group",group,asset.status)
+                    else:
+                        for asset in groupings[group][subgroup]:
+                            asset.viznode = ("single",asset.hash,asset.status)
+            logger.info("Building vizgraph")
+            # create the vizgraph
+            self.vizgraph = nx.DiGraph()
+            # add all viznodes
+            for asset in self.graph:
+                self.vizgraph.add_edges_from([(p.viznode, asset.viznode) for p in self.graph.predecessors(asset)]) 
+            # remove any self-edges caused by viznode
+            for node in self.vizgraph:
+                try:	
+                    self.vizgraph.remove_edge(node, node)
+                except:
+                    pass
+            print([node for node in self.vizgraph])
+            logger.info(f"Quotient graph has {self.vizgraph.number_of_nodes()} nodes and {self.vizgraph.size()} edges.")
+            logger.info("Computing quotient node positions")
+            self.pos = nx.kamada_kawai_layout(self.vizgraph)
+            self.pos = nx.spring_layout(self.vizgraph, pos=self.pos)
             self._stale_viz = False
         logger.info("Drawing the graph")
-        node_colors = [_NODE_COLORS[asset.status] for asset in self.graph]
-        nx.draw(self.graph, pos=self.pos, node_color=node_colors)
+        #node_colors = [_NODE_COLORS[asset.status] for asset in self.graph]
+        node_colors = [_NODE_COLORS[node[2]] for node in self.vizgraph]
+        node_sizes = [600 if node[0] == "group" else 100 for node in self.vizgraph]
+        nx.draw(self.vizgraph, pos=self.pos, node_color=node_colors, node_size=node_sizes)
         plt.show()
 
 

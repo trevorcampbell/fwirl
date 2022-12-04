@@ -25,7 +25,7 @@ class UnreliableAsset(sentry.Asset):
         # with P = 0.3, the asset build fails before creation
         # with P = 0.3, the asset build fails after creation
         r = random.random()
-        if r <= 0.001:
+        if r > 0.001:
             self._built = True
             self._ts = plm.now()
         #elif r <= 0.7:
@@ -46,7 +46,7 @@ g = sentry.AssetGraph()
 a = ReliableAsset("Reliable", [])
 li = []
 final = []
-for i in range(20000):
+for i in range(4000):
     a1 = ReliableAsset(f"Reliable1{i}", [a], group = 0, subgroup = i)
     a2 = UnreliableAsset(f"Unreliable{i}", [a1], group = 0, subgroup = i)
     a3 = ReliableAsset(f"Reliable2{i}", [a2], group = 0, subgroup = i)
