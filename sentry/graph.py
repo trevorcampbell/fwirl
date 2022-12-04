@@ -17,29 +17,32 @@ class AssetGraph:
     def __init__(self):
         self.graph = nx.DiGraph()
         self.pos = None
-        self.stale_node_positions = False
-
-        #nx.is_directed_acyclic_graph(graph)
-        #downstream = [n for n in nx.traversal.bfs_tree(g, 2) if n != 2]
-        #graph.remove_nodes_from(iterable_nodes_e.g._bfs_tree)
-        #upstream = [n for n in nx.traversal.bfs_tree(g, 2, reverse=True) if n != 2]
-        #graph.add_edge(source_node, dest_node) #also adds node
-        #graph.add_edges_from(edges) #also adds nodes
-        #graph.nodes[asset_key]
+        self._stale_viz = True
+        self._stale_topological_sort = True
+        self._cached_topological_sort = None
 
     def add_assets(self, assets):
         logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")
         edges = []
-        for a in assets:
+        unq_assets = set()
+        asset_queue = []
+        asset_queue.extend(assets)
+        while len(asset_queue) != 0:
+            a = asset_queue.pop()
+            if a in unq_assets or a in self.graph:
+                continue
+            unq_assets.add(a)
             edges.extend([(d, a) for d in a.dependencies])
+            asset_queue.extend(a.dependencies)
         logger.info(f"Adding {len(edges)} edges, {len(assets)} assets, and upstream assets to the graph")
         old_edges = self.graph.size()
         old_nodes = self.graph.number_of_nodes()
         self.graph.add_edges_from(edges)
         new_edges = self.graph.size()
         new_nodes = self.graph.number_of_nodes()
-        logger.info(f"Added {new_nodes-old_nodes} unique assets and {new_edges-old_edges} unique edges to the graph")
-        self.stale_node_positions = True
+        self._stale_viz = True
+        self._stale_topological_sort = True
+        logger.info(f"Added {new_edges-old_edges} unique edges and {new_nodes-old_nodes} unique assets to the graph")
 
     def remove_assets(self, assets):
         logger.info(f"Removing {len(assets)} assets and downstream assets from graph")
@@ -48,7 +51,8 @@ class AssetGraph:
         self.graph.remove_nodes_from(assets)
         new_edges = self.graph.size()
         new_nodes = self.graph.number_of_nodes()
-        self.stale_node_positions = True
+        self._stale_viz = True
+        self._stale_topological_sort = True
         logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
 
     def propagate_status(self):
@@ -59,7 +63,12 @@ class AssetGraph:
         # 5. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
         # 6. I'm Current
         logger.info(f"Running status propagation on asset graph")
-        for asset in nx.topological_sort(self.graph):
+        # refresh the topological sort if needed
+        if self._stale_topological_sort:
+            logger.info(f"Asset graph structure changed; recomputing the topological sort")
+            self._cached_topological_sort = list(nx.topological_sort(self.graph))
+            self._stale_topological_sort = False
+        for asset in self._cached_topological_sort:
             logger.debug(f"Updating status for asset {asset}")
             any_paused = False
             any_stale_failed_un = False
@@ -99,10 +108,14 @@ class AssetGraph:
             logger.info(f"Asset {asset} status: {asset.status}")
         return
 
-    def build(self, root=None):
+    def build(self):
         # Builds only happen for Unavailable and Stale assets whose parents are all Current
         logger.info(f"Running build on asset graph")
-        for asset in nx.topological_sort(self.graph if root is None else self.graph[root]):
+        if self._stale_topological_sort:
+            logger.info(f"Asset graph structure changed; recomputing the topological sort")
+            self._cached_topological_sort = list(nx.topological_sort(self.graph))
+            self._stale_topological_sort = False
+        for asset in self._cached_topological_sort:
             logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {[p.status for p in self.graph.predecessors(asset)]}")
             if (asset.status == AssetStatus.Unavailable or asset.status == AssetStatus.Stale) and all(p.status == AssetStatus.Current for p in self.graph.predecessors(asset)):
                 logger.info(f"Asset {asset} is {asset.status} and all parents are current; rebuilding")
@@ -142,21 +155,38 @@ class AssetGraph:
                 asset.status = AssetStatus.Current
                 asset.message = "Build complete"
                 logger.info(f"Asset {asset} build completed successfully (status: {asset.status})")
+            else:
+                logger.debug(f"Asset {asset} not ready to rebuild.")
         return
 
     def visualize(self):
         # in order to visualize large graphs
         # collapse all subgroups within a group with all constant state 
-        logger.info("Visualizing asset graph")
-        # TODO traverse graph, build dict of [group][subgroup] -> [nodes]
-        # TODO check which subgroups have all nodes with the same state
-        # TODO build quotient_graph for all nodes in a group with a constant-state subgroup
+        logger.info("Visualizing asset graph") 
+        if self._stale_viz:
+            #logger.info("Asset graph structure changed; recomputing quotient graph structure and node positions")
+            #groupings = {}
+            #for asset in self.graph:
+            #    if asset.group and asset.subgroup:
+            #        if asset.group not in groupings:
+            #            groupings[asset.group] = {}
+            #        if asset.subgroup not in groupings[asset.group]:
+            #            groupings[asset.group][asset.subgroup] = []
+            #        groupings[asset.group][asset.subgroup].append(asset)
+            #for group in groupings:
+            #    for subgroup in groupings[group]:
+            #        if len({asset.status for asset in groupings[group][subgroup]}) == 1:
+            #            for asset in groupings[group][subgroup]:
+            #                asset.vizgroup = 3
+            #        
+            #nx.quotient_graph(self.graph, partition = lambda u, v : u.group
+            ## TODO traverse graph, build dict of [group][subgroup] -> [nodes]
+            ## TODO check which subgroups have all nodes with the same state
+            ## TODO build quotient_graph for all nodes in a group with a constant-state subgroup
 
-
-        if self.stale_node_positions:
-            logger.info("Node positions have changed; repositioning")
             #self.pos = nx.multipartite_layout(self.graph)
             self.pos = nx.planar_layout(self.graph)
+            self._stale_viz = False
         logger.info("Drawing the graph")
         node_colors = [_NODE_COLORS[asset.status] for asset in self.graph]
         nx.draw(self.graph, pos=self.pos, node_color=node_colors)

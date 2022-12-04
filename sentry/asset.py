@@ -18,6 +18,9 @@ class Asset:
         self.dependencies = dependencies
         self.status = AssetStatus.Unavailable
         self.message = ""
+        self.group = group
+        self.subgroup = subgroup
+        self.viznode = None
         self._cached_timestamp = AssetStatus.Unavailable
 
     def __hash__(self):

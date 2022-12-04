@@ -47,9 +47,9 @@ a = ReliableAsset("Reliable", [])
 li = []
 final = []
 for i in range(20000):
-    a1 = ReliableAsset(f"Reliable1", [a], group = 0, subgroup = i)
-    a2 = UnreliableAsset(f"Unreliable", [a1], group = 0, subgroup = i)
-    a3 = ReliableAsset(f"Reliable2", [a2], group = 0, subgroup = i)
+    a1 = ReliableAsset(f"Reliable1{i}", [a], group = 0, subgroup = i)
+    a2 = UnreliableAsset(f"Unreliable{i}", [a1], group = 0, subgroup = i)
+    a3 = ReliableAsset(f"Reliable2{i}", [a2], group = 0, subgroup = i)
     li.extend([a1,a2,a3])
     final.append(a3)
 g.add_assets(li)
@@ -61,6 +61,7 @@ g.add_assets([b])
 g.propagate_status()
 g.build()
 
+g.build()
 
 g.visualize()
 
