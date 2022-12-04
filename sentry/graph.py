@@ -131,7 +131,7 @@ class AssetGraph:
             self._stale_topological_sort = False
         for asset in self._cached_topological_sort:
             parent_status_cts = Counter([p.status for p in self.graph.predecessors(asset)])
-            logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {list(parent_status_cts.items())}")
+            logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {(' '.join([str(item[0]) +': ' + str(item[1]) + ',' for item in list(parent_status_cts.items())]))[:-1]}")
             if (asset.status == AssetStatus.Unavailable or asset.status == AssetStatus.Stale) and all(p.status == AssetStatus.Current for p in self.graph.predecessors(asset)):
                 logger.info(f"Asset {asset} is {fmt(asset.status)} and all parents are current; rebuilding")
                 # set building status
@@ -148,9 +148,17 @@ class AssetGraph:
 
                 # refresh the timestamp cache
                 ts = asset._timestamp()
-
                 logger.debug(f"New asset {asset} timestamp: {ts}")
-                logger.debug(f"Parent asset timestamps: {[str(p._cached_timestamp) for p in self.graph.predecessors(asset)]}")
+
+                # get latest parent timestamp
+                parents = list(self.graph.predecessors(asset))
+                if len(parents) == 0:
+                    logger.debug(f"Latest parent asset timestamp: (no parents)")
+                else:
+                    latest_parent_timestamp = max([p._cached_timestamp for p in parents])
+                    logger.debug(f"Latest parent asset timestamp: {latest_parent_timestamp}")
+                    if ts < latest_parent_timestamp:
+                        raise RuntimeError("Rebuilt asset has timestamp earlier than latest parent!")
 
                 # make sure asset is now available and has a new timestamp
                 if ts is AssetStatus.Unavailable:
