@@ -24,6 +24,7 @@ _LOGURU_COLORS = {AssetStatus.Current : "32",
                 AssetStatus.Failed : "91"
             }
 
+# TODO: use better formatting than ANSI...
 def fmt(status):
     #return f"<{_LOGURU_COLORS[status]}>{status}</>"
     return f"\033[{_LOGURU_COLORS[status]}m{status}\033[00m\u001b[1m"

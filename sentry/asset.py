@@ -1,6 +1,7 @@
 from enum import Enum
 from abc import abstractmethod
 from loguru import logger
+import pendulum as plm
 
 class AssetStatus(Enum):
     Current = 0
@@ -43,29 +44,37 @@ class Asset:
     def timestamp(self):
         # return timestamp if exists
         # return AssetStatus.Unavailable if not
-        return
+        pass
 
     @abstractmethod
     def build(self):
         # if returns an object, gets serialized and stored in db
-        return
+        pass
 
-## assets that are may be modified asynchronously by external actors
-#class ExposedAsset(Asset):
-#
-#    def build(self):
-#        pass
-#
-#    def get_timestamp(self):
-#        # compare value
-#        # return timestamp if exists
-#        # return AssetStatus.Unavailable if not
-#        return
-#
-## assets that are just internal to sentry and cannot be modified by external actors
-## i.e. serializable, stored in our DB
-#class InternalAsset(Asset):
-#    pass
+# Assets for which we can only obtain a value (no notion of a timestamp)
+# may be modified by external agents asynchronously with no notification
+# automatically updates timestamps when a new value is obtained that is different from previous value
+class ExternalAsset(Asset):
+    def _get(self):
+        # TODO add error handling; if the asset get fails, then timestamp should be Unavailable, not plm.now
+        val = self.get()
+        if diff(val, self._cached_val):
+            self._cached_val = val
+            self._cached_timestamp = plm.now()
 
+    def timestamp(self):
+        return self._cached_timestamp
 
+    def build(self):
+        pass
+
+    @abstractmethod
+    def get(self):
+        pass
+
+    @abstractmethod
+    def diff(self, val1, val2):
+        pass
+
+    
 
