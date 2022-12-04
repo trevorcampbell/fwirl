@@ -2,7 +2,7 @@ import networkx as nx
 from loguru import logger
 from .asset import AssetStatus
 import matplotlib.pyplot as plt
-from collections import Counter
+from collections import Counter, defaultdict
 #import notifiers
 
 _NODE_COLORS = {AssetStatus.Current : "tab:green",
@@ -13,6 +13,20 @@ _NODE_COLORS = {AssetStatus.Current : "tab:green",
                 AssetStatus.Unavailable : "gray",
                 AssetStatus.Failed : "tab:red"
             }
+
+# TODO: use HEX to match above colors <fg #00005f>, <fg #EE1>	
+_LOGURU_COLORS = {AssetStatus.Current : "32",
+                AssetStatus.Stale : "33",
+                AssetStatus.Building : "34",
+                AssetStatus.Paused : "35",
+                AssetStatus.UpstreamPaused : "35",
+                AssetStatus.Unavailable : "37",
+                AssetStatus.Failed : "91"
+            }
+
+def fmt(status):
+    #return f"<{_LOGURU_COLORS[status]}>{status}</>"
+    return f"\033[{_LOGURU_COLORS[status]}m{status}\033[00m\u001b[1m"
 
 class AssetGraph:
     def __init__(self):
@@ -90,22 +104,22 @@ class AssetGraph:
 
             if any_paused:
                 asset.status = AssetStatus.UpstreamPaused
-                logger.info(f"Asset {asset} status: {asset.status}")
+                logger.info(f"Asset {asset} status: {fmt(asset.status)}")
                 continue
 
             timestamp = asset._timestamp()
             if timestamp == AssetStatus.Unavailable:
                 asset.status = AssetStatus.Unavailable
-                logger.info(f"Asset {asset} status: {asset.status}")
+                logger.info(f"Asset {asset} status: {fmt(asset.status)}")
                 continue
 
             if any_stale_failed_un or (timestamp < latest_parent_timestamp):
                 asset.status = AssetStatus.Stale
-                logger.info(f"Asset {asset} status: {asset.status}")
+                logger.info(f"Asset {asset} status: {fmt(asset.status)}")
                 continue
 
             asset.status = AssetStatus.Current
-            logger.info(f"Asset {asset} status: {asset.status}")
+            logger.info(f"Asset {asset} status: {fmt(asset.status)}")
         return
 
     def build(self):
@@ -119,7 +133,7 @@ class AssetGraph:
             parent_status_cts = Counter([p.status for p in self.graph.predecessors(asset)])
             logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {list(parent_status_cts.items())}")
             if (asset.status == AssetStatus.Unavailable or asset.status == AssetStatus.Stale) and all(p.status == AssetStatus.Current for p in self.graph.predecessors(asset)):
-                logger.info(f"Asset {asset} is {asset.status} and all parents are current; rebuilding")
+                logger.info(f"Asset {asset} is {fmt(asset.status)} and all parents are current; rebuilding")
                 # set building status
                 asset.status = AssetStatus.Building
 
@@ -155,10 +169,75 @@ class AssetGraph:
                 # update to current status
                 asset.status = AssetStatus.Current
                 asset.message = "Build complete"
-                logger.info(f"Asset {asset} build completed successfully (status: {asset.status})")
+                logger.info(f"Asset {asset} build completed successfully (status: {fmt(asset.status)})")
             else:
                 logger.debug(f"Asset {asset} not ready to rebuild.")
         return
+
+    def _collect_groups(self):
+        logger.debug("Collecting node groups")
+        groupings = defaultdict(list)
+        for asset in self.graph:
+            if asset.group == '__singletons__' or asset.subgroup == '__singletons__':
+                raise ValueError('(Sub)group name used reserved keyword __singletons__')
+            if asset.group is not None:
+                if asset.group not in groupings:
+                    groupings[asset.group] = defaultdict(list)
+                if asset.subgroup is not None:
+                    groupings[asset.group][asset.subgroup].append(asset)
+                else:
+                    groupings[asset.group]['__singletons__'].append(asset)
+            else:
+                groupings['__singletons__'].append(asset) 
+        return groupings
+    
+    def summarize(self):
+        groupings = self._collect_groups()
+        summary = f"\nAsset Graph Summary\n-------------------\nAssets: {self.graph.number_of_nodes()}\n"
+        for status in AssetStatus:
+            summary += f"    {fmt(status)}: {sum([a.status == status for a in self.graph])} assets\n" 
+        summary += f"Edges: {self.graph.size()}\n"
+        summary += f"Asset Groups: {len(groupings) - 1} groups, {len(groupings['__singletons__'])} singletons\n"
+        for gr in groupings:
+            # report individuals 
+            if gr == '__singletons__':
+                # report summarized individuals
+                status_groups = defaultdict(int)
+                for asset in groupings[gr]:
+                    if asset.status != AssetStatus.Failed:
+                        status_groups[asset.status] += 1 
+                summary += f"    Singletons:\n"
+                for status in status_groups:
+                    summary += f"        {fmt(status)}: {status_groups[status]} singletons\n"
+                # report special cases
+                for asset in groupings[gr]:
+                    if asset.status == AssetStatus.Failed:
+                        summary += f"        {asset}: {fmt(asset.status)}\n"
+                continue
+            summary += f"    Group {gr}: {len(groupings[gr]) - 1} subgroups, {len(groupings[gr]['__singletons__'])} singletons\n"
+            # collect and report the summarized subgroups
+            status_groups = defaultdict(int)
+            for sb in groupings[gr]:
+                if sb == '__singletons__':
+                    for asset in groupings[gr][sb]:
+                        if asset.status != AssetStatus.Failed:
+                            status_groups[asset.status] += 1
+                elif len({asset.status for asset in groupings[gr][sb]}) == 1 and groupings[gr][sb][0].status != AssetStatus.Failed:
+                    status_groups[groupings[gr][sb][0].status] += 1
+            for sg in status_groups:
+                summary += f"        {sg}: {status_groups[sg]} subgroups/singletons\n"
+            # collect and report special cases
+            for sb in groupings[gr]:
+                if sb == '__singletons__':
+                    for asset in groupings[gr][sb]:
+                        if asset.status == AssetStatus.Failed:
+                            summary += f"        Singleton {asset}: {fmt(asset.status)}\n"
+                elif len({asset.status for asset in groupings[gr][sb]}) > 1 or groupings[gr][sb][0].status == AssetStatus.Failed:
+                    summary += f"        Subgroup {sb}:\n"
+                    for asset in groupings[gr][sb]:
+                        summary += f"            {asset} : {fmt(asset.status)}\n"
+        logger.info(summary, colorize=True)
+        
 
     def visualize(self):
         # in order to visualize large graphs
@@ -208,6 +287,8 @@ class AssetGraph:
         node_sizes = [600 if node[0] == "group" else 100 for node in vizgraph]
         nx.draw(vizgraph, pos=pos, node_color=node_colors, node_size=node_sizes)
         plt.show()
+
+        
 
 
 

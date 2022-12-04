@@ -61,7 +61,5 @@ g.add_assets([b])
 g.propagate_status()
 g.build()
 
-g.build()
-
-g.visualize()
+g.summarize()
 
