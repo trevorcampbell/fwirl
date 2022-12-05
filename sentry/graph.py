@@ -4,6 +4,7 @@ from .asset import AssetStatus
 from .resource import ResourceInitResult
 import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 #import notifiers
 
 _NODE_COLORS = {AssetStatus.Current : "tab:green",
@@ -33,8 +34,8 @@ def fmt(status):
 class AssetGraph:
     def __init__(self):
         self.graph = nx.DiGraph()
-        self._stale_topological_sort = True
-        self._cached_topological_sort = None
+        #self._stale_topological_sort = True
+        #self._cached_topological_sort = None
 
     def add_assets(self, assets):
         logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")
@@ -58,7 +59,7 @@ class AssetGraph:
         self.graph.add_edges_from(edges)
         new_edges = self.graph.size()
         new_nodes = self.graph.number_of_nodes()
-        self._stale_topological_sort = True
+        #self._stale_topological_sort = True
         logger.info(f"Added {new_edges-old_edges} unique edges and {new_nodes-old_nodes} unique assets to the graph")
 
     def remove_assets(self, assets):
@@ -68,10 +69,10 @@ class AssetGraph:
         self.graph.remove_nodes_from(assets)
         new_edges = self.graph.size()
         new_nodes = self.graph.number_of_nodes()
-        self._stale_topological_sort = True
+        #self._stale_topological_sort = True
         logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
 
-    def propagate_status(self):
+    def update_status(self):
         # Status propagates using the following cascade of rules:
         # 0. If I'm Failed and self.allow_retry = False, I'm Failed
         # 1. If any of my parents is Paused or UpstreamPaused, I'm UpstreamPaused.
@@ -80,12 +81,13 @@ class AssetGraph:
         # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
         # 5. I'm Current
         logger.info(f"Running status propagation on asset graph")
-        # refresh the topological sort if needed
-        if self._stale_topological_sort:
-            logger.info(f"Asset graph structure changed; recomputing the topological sort")
-            self._cached_topological_sort = list(nx.topological_sort(self.graph))
-            self._stale_topological_sort = False
-        for asset in self._cached_topological_sort:
+        sorted_nodes = list(nx.topological_sort(self.graph))
+        ## refresh the topological sort if needed
+        #if self._stale_topological_sort:
+        #    logger.info(f"Asset graph structure changed; recomputing the topological sort")
+        #    self._cached_topological_sort = list(nx.topological_sort(self.graph))
+        #    self._stale_topological_sort = False
+        for asset in sorted_nodes:
             logger.debug(f"Updating status for asset {asset}")
             if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
@@ -154,23 +156,49 @@ class AssetGraph:
             except Exception as e:
                 logger.exception(f"Resource {resource} cleanup failed; attempting to clean up other resources")
 
+    def build_upstream(self, asset_or_assets):
+        logger.info(f"Building assets upstream of {asset_or_assets}")
+        if isinstance(asset_or_assets, Asset):
+            asset_or_assets = [asset_or_assets]
+        nodes_to_build = []
+        for asset in asset_or_assets:
+            nodes_to_build.extend(nx.ancestors(self.graph, asset))
+        sg = self.graph.subgraph(nodes_to_build)
+        sorted_nodes = list(nx.topological_sort(sg))
+        self._build(sorted_nodes)
+
+    def build_downstream(self, asset_or_assets):
+        logger.info(f"Building assets downstream of {asset_or_assets}")
+        if isinstance(asset_or_assets, Asset):
+            asset_or_assets = [asset_or_assets]
+        nodes_to_build = []
+        for asset in asset_or_assets:
+            nodes_to_build.extend(nx.descendants(self.graph, asset))
+        sg = self.graph.subgraph(nodes_to_build)
+        sorted_nodes = list(nx.topological_sort(sg))
+        self._build(sorted_nodes)
+
     def build(self):
+        logger.info(f"Building all assets")
+        sorted_nodes = list(nx.topological_sort(self.graph))
+        self._build(sorted_nodes)
+
+    def _build(self, sorted_nodes):
         # Builds only happen for Unavailable and Stale assets whose parents are all Current
-        logger.info(f"Running build on asset graph")
-        if self._stale_topological_sort:
-            logger.info(f"Asset graph structure changed; recomputing the topological sort")
-            self._cached_topological_sort = list(nx.topological_sort(self.graph))
-            self._stale_topological_sort = False
+        #if self._stale_topological_sort:
+        #    logger.info(f"Asset graph structure changed; recomputing the topological sort")
+        #    self._cached_topological_sort = list(nx.topological_sort(self.graph))
+        #    self._stale_topological_sort = False
 
         # collect and initialize required resources
         required_resources = set()
-        for asset in self._cached_topological_sort:
+        for asset in sorted_nodes:
             required_resources.update(asset.resources)
         if not self._initialize_resources(required_resources):
             return
 
         # loop over assets and build
-        for asset in self._cached_topological_sort:
+        for asset in sorted_nodes:
             parent_status_cts = Counter([p.status for p in self.graph.predecessors(asset)])
             logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {(' '.join([str(item[0]) +': ' + str(item[1]) + ',' for item in list(parent_status_cts.items())]))[:-1]}")
             if (asset.status == AssetStatus.Unavailable or asset.status == AssetStatus.Stale) and all(p.status == AssetStatus.Current for p in self.graph.predecessors(asset)):
