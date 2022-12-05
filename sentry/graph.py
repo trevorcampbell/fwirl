@@ -82,6 +82,12 @@ class AssetGraph:
         # 5. I'm Current
         logger.info(f"Running status propagation on asset graph")
         sorted_nodes = list(nx.topological_sort(self.graph))
+
+        required_resources = set()
+        for asset in sorted_nodes:
+            required_resources.update(asset.resources)
+        if not self._initialize_resources(required_resources):
+            return
         ## refresh the topological sort if needed
         #if self._stale_topological_sort:
         #    logger.info(f"Asset graph structure changed; recomputing the topological sort")
@@ -132,6 +138,9 @@ class AssetGraph:
 
             asset.status = AssetStatus.Current
             logger.info(f"Asset {asset} status: {fmt(asset.status)}")
+
+        self._cleanup_resources(required_resources)
+
         return
 
     def _initialize_resources(self, resources):
@@ -251,6 +260,8 @@ class AssetGraph:
                 logger.info(f"Asset {asset} build completed successfully (status: {fmt(asset.status)})")
             else:
                 logger.debug(f"Asset {asset} not ready to rebuild.")
+
+        self._cleanup_resources(required_resources)
 
         return
 

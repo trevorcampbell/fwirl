@@ -57,13 +57,14 @@ class Asset:
 # may be modified by external agents asynchronously with no notification
 # automatically updates timestamps when a new value is obtained that is different from previous value
 class ExternalAsset(Asset):
-    def __init__(self, key, min_polling_interval, resources = None, group = None, subgroup = None, allow_retry = True):
+    def __init__(self, key, dependencies, min_polling_interval, resources = None, group = None, subgroup = None, allow_retry = True):
         self.min_polling_interval = min_polling_interval
         self.last_poll = AssetStatus.Unavailable
         self._cached_timestamp = AssetStatus.Unavailable
         self._cached_val = AssetStatus.Unavailable
-        super(self, ExternalAsset).__init__(key, [], resources=resources, group=group, subgroup=subgroup, allow_retry=allow_retry)
+        super(self, ExternalAsset).__init__(key, dependencies, resources=resources, group=group, subgroup=subgroup, allow_retry=allow_retry)
 
+    # TODO also add a put method and allow this program to update the external resource
     # TODO self.get error handling?
     # TODO store val/timestamp in a DB to record last poll/val to avoid rerunning flows unnecessarily if this program quits
     def timestamp(self):
@@ -72,7 +73,7 @@ class ExternalAsset(Asset):
             self.last_poll = plm.now()
             if diff(val, self._cached_val):
                 self._cached_val = val
-                self._cached_timestamp = plm.now()
+                return plm.now()
         return self._cached_timestamp
 
     def build(self):
