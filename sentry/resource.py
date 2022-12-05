@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from enum import Enum
 
 class Resource:
     def __init__(self, key):
@@ -13,9 +14,9 @@ class Resource:
 
     def __repr__(self):
         return self.__class__.__name__ + f"({self.key})"
- 
+
     @abstractmethod
-    def open(self):
+    def init(self):
         pass
 
     @abstractmethod

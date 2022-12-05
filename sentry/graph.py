@@ -1,6 +1,7 @@
 import networkx as nx
 from loguru import logger
 from .asset import AssetStatus
+from .resource import ResourceInitResult
 import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 #import notifiers
@@ -131,6 +132,28 @@ class AssetGraph:
             logger.info(f"Asset {asset} status: {fmt(asset.status)}")
         return
 
+    def _initialize_resources(self, resources):
+        logger.info(f"Initializing {len(required_resources)} build resources")
+        for resource in required_resources:
+            try:
+                logger.debug(f"Initializing resource {resource}")
+                resource.init()
+            except Exception as e:
+                logger.exception(f"Resource {resource} initialization failed; cleaning up and aborting build")
+                self._cleanup_resources(resources)
+                return False
+        return True
+
+    def _cleanup_resources(self, resources):
+        logger.info(f"Cleaning up {len(required_resources)} build resources")
+        #cleanup resources
+        for resource in required_resources:
+            try:
+                logger.debug(f"Cleaning up resource {resource}")
+                resource.close()
+            except Exception as e:
+                logger.exception(f"Resource {resource} cleanup failed; attempting to clean up other resources")
+
     def build(self):
         # Builds only happen for Unavailable and Stale assets whose parents are all Current
         logger.info(f"Running build on asset graph")
@@ -138,6 +161,15 @@ class AssetGraph:
             logger.info(f"Asset graph structure changed; recomputing the topological sort")
             self._cached_topological_sort = list(nx.topological_sort(self.graph))
             self._stale_topological_sort = False
+
+        # collect and initialize required resources
+        required_resources = set()
+        for asset in self._cached_topological_sort:
+            required_resources.update(asset.resources)
+        if not self._initialize_resources(required_resources):
+            return
+
+        # loop over assets and build
         for asset in self._cached_topological_sort:
             parent_status_cts = Counter([p.status for p in self.graph.predecessors(asset)])
             logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {(' '.join([str(item[0]) +': ' + str(item[1]) + ',' for item in list(parent_status_cts.items())]))[:-1]}")
@@ -149,6 +181,7 @@ class AssetGraph:
 
                 # run the build
                 try:
+                    logger.debug(f"Building {asset}")
                     asset.build()
                 except Exception as e:
                     asset.status = AssetStatus.Failed
@@ -190,6 +223,7 @@ class AssetGraph:
                 logger.info(f"Asset {asset} build completed successfully (status: {fmt(asset.status)})")
             else:
                 logger.debug(f"Asset {asset} not ready to rebuild.")
+
         return
 
     def _collect_groups(self):

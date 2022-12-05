@@ -13,10 +13,11 @@ class AssetStatus(Enum):
     Failed = 6
 
 class Asset:
-    def __init__(self, key, dependencies, group = None, subgroup = None, allow_retry = True):
+    def __init__(self, key, dependencies, resources = None, group = None, subgroup = None, allow_retry = True):
         self.key = key
         self.hash = hash(key)
         self.dependencies = dependencies
+        self.resources = resources
         self.status = AssetStatus.Unavailable
         self.message = ""
         self.group = group
