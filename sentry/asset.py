@@ -13,7 +13,7 @@ class AssetStatus(Enum):
     Failed = 6
 
 class Asset:
-    def __init__(self, key, dependencies, group = None, subgroup = None):
+    def __init__(self, key, dependencies, group = None, subgroup = None, allow_retry = True):
         self.key = key
         self.hash = hash(key)
         self.dependencies = dependencies
@@ -21,7 +21,8 @@ class Asset:
         self.message = ""
         self.group = group
         self.subgroup = subgroup
-        self.viznode = None
+        self.allow_retry = allow_retry
+        self._last_build_timestamp = AssetStatus.Unavailable
         self._cached_timestamp = AssetStatus.Unavailable
 
     def __hash__(self):
@@ -76,5 +77,5 @@ class ExternalAsset(Asset):
     def diff(self, val1, val2):
         pass
 
-    
+
 

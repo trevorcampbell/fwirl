@@ -14,7 +14,7 @@ _NODE_COLORS = {AssetStatus.Current : "tab:green",
                 AssetStatus.Failed : "tab:red"
             }
 
-# TODO: use HEX to match above colors <fg #00005f>, <fg #EE1>	
+# TODO: use HEX to match above colors <fg #00005f>, <fg #EE1>
 _LOGURU_COLORS = {AssetStatus.Current : "32",
                 AssetStatus.Stale : "33",
                 AssetStatus.Building : "34",
@@ -72,11 +72,12 @@ class AssetGraph:
 
     def propagate_status(self):
         # Status propagates using the following cascade of rules:
+        # 0. If I'm Failed and self.allow_retry = False, I'm Failed
         # 1. If any of my parents is Paused or UpstreamPaused, I'm UpstreamPaused.
         # 2. If I don't exist, I'm Unavailable.
-        # 4. If any of my parents is Stale or Failed or Unavailable, I'm Stale
-        # 5. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
-        # 6. I'm Current
+        # 3. If any of my parents is Stale or Failed or Unavailable, I'm Stale
+        # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
+        # 5. I'm Current
         logger.info(f"Running status propagation on asset graph")
         # refresh the topological sort if needed
         if self._stale_topological_sort:
@@ -85,6 +86,8 @@ class AssetGraph:
             self._stale_topological_sort = False
         for asset in self._cached_topological_sort:
             logger.debug(f"Updating status for asset {asset}")
+            if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
+                logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
             any_paused = False
             any_stale_failed_un = False
             latest_parent_timestamp = AssetStatus.Unavailable
@@ -105,18 +108,23 @@ class AssetGraph:
 
             if any_paused:
                 asset.status = AssetStatus.UpstreamPaused
-                logger.info(f"Asset {asset} status: {fmt(asset.status)}")
+                logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent paused)")
                 continue
 
             timestamp = asset._timestamp()
             if timestamp == AssetStatus.Unavailable:
                 asset.status = AssetStatus.Unavailable
-                logger.info(f"Asset {asset} status: {fmt(asset.status)}")
+                logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp unavailable)")
                 continue
 
-            if any_stale_failed_un or (timestamp < latest_parent_timestamp):
+            if any_stale_failed_un: or (timestamp < latest_parent_timestamp):
                 asset.status = AssetStatus.Stale
-                logger.info(f"Asset {asset} status: {fmt(asset.status)}")
+                logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent stale/failed/unavailable)")
+                continue
+
+            if timestamp < latest_parent_timestamp:
+                asset.status = AssetStatus.Stale
+                logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp older than parent)")
                 continue
 
             asset.status = AssetStatus.Current
@@ -137,6 +145,7 @@ class AssetGraph:
                 logger.info(f"Asset {asset} is {fmt(asset.status)} and all parents are current; rebuilding")
                 # set building status
                 asset.status = AssetStatus.Building
+                asset._last_build_timestamp = plm.now()
 
                 # run the build
                 try:
@@ -197,7 +206,7 @@ class AssetGraph:
                 else:
                     groupings[asset.group]['__singletons__'].append(asset)
             else:
-                groupings['__singletons__'].append(asset) 
+                groupings['__singletons__'].append(asset)
         # topologically sort the subgraphs
         logger.debug("Topologically sorting subgroups")
         for gr in groupings:
@@ -209,22 +218,22 @@ class AssetGraph:
                 sg = self.graph.subgraph(groupings[gr][sb])
                 groupings[gr][sb] = list(nx.topological_sort(sg))
         return groupings
-    
+
     def summarize(self):
         groupings = self._collect_groups()
         summary = f"\nAsset Graph Summary\n-------------------\nAssets: {self.graph.number_of_nodes()}\n"
         for status in AssetStatus:
-            summary += f"    {fmt(status)}: {sum([a.status == status for a in self.graph])} assets\n" 
+            summary += f"    {fmt(status)}: {sum([a.status == status for a in self.graph])} assets\n"
         summary += f"Edges: {self.graph.size()}\n"
         summary += f"Asset Groups: {len(groupings) - 1} groups, {len(groupings['__singletons__'])} singletons\n"
         for gr in groupings:
-            # report individuals 
+            # report individuals
             if gr == '__singletons__':
                 # report summarized individuals
                 status_groups = defaultdict(int)
                 for asset in groupings[gr]:
                     if asset.status != AssetStatus.Failed:
-                        status_groups[asset.status] += 1 
+                        status_groups[asset.status] += 1
                 summary += f"    Singletons:\n"
                 for status in status_groups:
                     summary += f"        {fmt(status)}: {status_groups[status]} singletons\n"
@@ -256,58 +265,60 @@ class AssetGraph:
                     for asset in groupings[gr][sb]:
                         summary += f"            {asset} : {fmt(asset.status)}\n"
         logger.info(summary, colorize=True)
-        
 
-    def visualize(self):
-        # in order to visualize large graphs
-        # collapse all subgroups within a group with all constant state 
-        logger.info("Visualizing asset graph") 
-        groupings = {}
-        logger.info("Assembling viznodes")
-        for asset in self.graph:
-            # if the asset is part of a group,subgroup
-            if (asset.group is not None) and (asset.subgroup is not None):
-                # collect assets in each group/subgroup
-                if asset.group not in groupings:
-                    groupings[asset.group] = {}
-                if asset.subgroup not in groupings[asset.group]:
-                    groupings[asset.group][asset.subgroup] = []
-                groupings[asset.group][asset.subgroup].append(asset)
-            else:
-                #ungrouped assets get their own viznodes
-                asset.viznode = ("single",asset.hash,asset.status)
-        # for grouped assets, merge into one viznode if status is the same across the subgroup
-        for group in groupings:
-            for subgroup in groupings[group]:
-                if len({asset.status for asset in groupings[group][subgroup]}) == 1:
-                    for asset in groupings[group][subgroup]:
-                        asset.viznode = ("group",group,asset.status)
-                else:
-                    for asset in groupings[group][subgroup]:
-                        asset.viznode = ("single",asset.hash,asset.status)
-        logger.info("Building vizgraph")
-        # create the vizgraph
-        vizgraph = nx.DiGraph()
-        # add all viznodes
-        for asset in self.graph:
-            vizgraph.add_edges_from([(p.viznode, asset.viznode) for p in self.graph.predecessors(asset)]) 
-        # remove any self-edges caused by viznode
-        for node in vizgraph:
-            try:	
-                vizgraph.remove_edge(node, node)
-            except:
-                pass
-        logger.info(f"Quotient graph has {vizgraph.number_of_nodes()} nodes and {vizgraph.size()} edges.")
-        logger.info("Computing quotient node positions")
-        pos = nx.planar_layout(vizgraph)
-        pos = nx.spring_layout(vizgraph, pos=pos) #initialize spring with planar
-        logger.info("Drawing the graph")
-        node_colors = [_NODE_COLORS[node[2]] for node in vizgraph]
-        node_sizes = [600 if node[0] == "group" else 100 for node in vizgraph]
-        nx.draw(vizgraph, pos=pos, node_color=node_colors, node_size=node_sizes)
-        plt.show()
 
-        
+    # TODO visualization (this code works but has old viznodes in it
+    # TODO recode this with new _collect_groups function
+    #def visualize(self):
+    #    # in order to visualize large graphs
+    #    # collapse all subgroups within a group with all constant state
+    #    logger.info("Visualizing asset graph")
+    #    groupings = {}
+    #    logger.info("Assembling viznodes")
+    #    for asset in self.graph:
+    #        # if the asset is part of a group,subgroup
+    #        if (asset.group is not None) and (asset.subgroup is not None):
+    #            # collect assets in each group/subgroup
+    #            if asset.group not in groupings:
+    #                groupings[asset.group] = {}
+    #            if asset.subgroup not in groupings[asset.group]:
+    #                groupings[asset.group][asset.subgroup] = []
+    #            groupings[asset.group][asset.subgroup].append(asset)
+    #        else:
+    #            #ungrouped assets get their own viznodes
+    #            asset.viznode = ("single",asset.hash,asset.status)
+    #    # for grouped assets, merge into one viznode if status is the same across the subgroup
+    #    for group in groupings:
+    #        for subgroup in groupings[group]:
+    #            if len({asset.status for asset in groupings[group][subgroup]}) == 1:
+    #                for asset in groupings[group][subgroup]:
+    #                    asset.viznode = ("group",group,asset.status)
+    #            else:
+    #                for asset in groupings[group][subgroup]:
+    #                    asset.viznode = ("single",asset.hash,asset.status)
+    #    logger.info("Building vizgraph")
+    #    # create the vizgraph
+    #    vizgraph = nx.DiGraph()
+    #    # add all viznodes
+    #    for asset in self.graph:
+    #        vizgraph.add_edges_from([(p.viznode, asset.viznode) for p in self.graph.predecessors(asset)])
+    #    # remove any self-edges caused by viznode
+    #    for node in vizgraph:
+    #        try:
+    #            vizgraph.remove_edge(node, node)
+    #        except:
+    #            pass
+    #    logger.info(f"Quotient graph has {vizgraph.number_of_nodes()} nodes and {vizgraph.size()} edges.")
+    #    logger.info("Computing quotient node positions")
+    #    pos = nx.planar_layout(vizgraph)
+    #    pos = nx.spring_layout(vizgraph, pos=pos) #initialize spring with planar
+    #    logger.info("Drawing the graph")
+    #    node_colors = [_NODE_COLORS[node[2]] for node in vizgraph]
+    #    node_sizes = [600 if node[0] == "group" else 100 for node in vizgraph]
+    #    nx.draw(vizgraph, pos=pos, node_color=node_colors, node_size=node_sizes)
+    #    plt.show()
+
+
 
 
 

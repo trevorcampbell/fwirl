@@ -56,8 +56,6 @@ g.add_assets(li)
 b = ReliableAsset("Final", final)
 g.add_assets([b])
 
-#g.visualize()
-
 g.propagate_status()
 g.build()
 
