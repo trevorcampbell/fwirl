@@ -60,8 +60,8 @@ print("initial")
 g.summarize()
 input()
 
-g.propagate_status()
-print("propagate")
+g.refresh_status()
+print("refresh")
 g.summarize()
 input()
 
@@ -70,7 +70,9 @@ print("build")
 g.summarize()
 input()
 
-g.propagate_status()
-print("propagate")
+g.refresh_status()
+print("refresh")
 g.summarize()
 input()
+
+g.schedule([a], build="* * * *", refresh="* * * *")

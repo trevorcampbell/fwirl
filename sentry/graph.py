@@ -72,7 +72,7 @@ class AssetGraph:
         #self._stale_topological_sort = True
         logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
 
-    def propagate_status(self):
+    def refresh_status(self):
         # Status propagates using the following cascade of rules:
         # 0. If I'm Failed and self.allow_retry = False, I'm Failed
         # 1. If any of my parents is Paused or UpstreamPaused or Failed, I'm UpstreamPaused.
@@ -80,7 +80,7 @@ class AssetGraph:
         # 3. If any of my parents is Stale or Unavailable, I'm Stale
         # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
         # 5. I'm Current
-        logger.info(f"Running status propagation on asset graph")
+        logger.info(f"Running status refresh & propagation on asset graph")
         sorted_nodes = list(nx.topological_sort(self.graph))
 
         required_resources = set()
