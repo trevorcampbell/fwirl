@@ -75,9 +75,9 @@ class AssetGraph:
     def update_status(self):
         # Status propagates using the following cascade of rules:
         # 0. If I'm Failed and self.allow_retry = False, I'm Failed
-        # 1. If any of my parents is Paused or UpstreamPaused, I'm UpstreamPaused.
+        # 1. If any of my parents is Paused or UpstreamPaused or Failed, I'm UpstreamPaused.
         # 2. If I don't exist, I'm Unavailable.
-        # 3. If any of my parents is Stale or Failed or Unavailable, I'm Stale
+        # 3. If any of my parents is Stale or Unavailable, I'm Stale
         # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
         # 5. I'm Current
         logger.info(f"Running status propagation on asset graph")
@@ -97,27 +97,28 @@ class AssetGraph:
             logger.debug(f"Updating status for asset {asset}")
             if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
-            any_paused = False
-            any_stale_failed_un = False
+                continue
+            parent_paused_failed = False
+            any_stale_unav = False
             latest_parent_timestamp = AssetStatus.Unavailable
             for parent in self.graph.predecessors(asset):
                 logger.debug(f"Checking parent {parent} with status {parent.status} and timestamp {parent._cached_timestamp}")
-                if parent.status == AssetStatus.Paused or parent.status == AssetStatus.UpstreamPaused:
-                    any_paused = True
+                if parent.status == AssetStatus.Paused or parent.status == AssetStatus.UpstreamPaused or parent.status == AssetStatus.Failed:
+                    any_paused_failed = True
                 if parent.status == AssetStatus.Stale or parent.status == AssetStatus.Failed or parent.status == AssetStatus.Unavailable:
-                    any_stale_failed_un = True
+                    any_stale_unav = True
                 # don't try to compute timestamps if any parent is paused, since they may not exist (and have no cached ts)
-                if parent.status != AssetStatus.Unavailable and (not any_paused):
+                if parent.status != AssetStatus.Unavailable and (not any_paused_failed):
                     ts = parent._cached_timestamp
                     if latest_parent_timestamp == AssetStatus.Unavailable:
                         latest_parent_timestamp = ts
                     else:
                         latest_parent_timestamp = latest_parent_timestamp if latest_parent_timestamp > ts else ts
-                logger.debug(f"After processing parent {parent}: any_paused = {any_paused}, any_stale_failed_un = {any_stale_failed_un}, latest_ts = {latest_parent_timestamp}")
+                logger.debug(f"After processing parent {parent}: any_paused_failed = {any_paused_failed}, any_stale_unav = {any_stale_unav}, latest_ts = {latest_parent_timestamp}")
 
-            if any_paused:
+            if any_paused_failed:
                 asset.status = AssetStatus.UpstreamPaused
-                logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent paused)")
+                logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent paused or failed)")
                 continue
 
             timestamp = asset._timestamp()
@@ -126,7 +127,7 @@ class AssetGraph:
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp unavailable)")
                 continue
 
-            if any_stale_failed_un: or (timestamp < latest_parent_timestamp):
+            if any_stale_unav: or (timestamp < latest_parent_timestamp):
                 asset.status = AssetStatus.Stale
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent stale/failed/unavailable)")
                 continue
