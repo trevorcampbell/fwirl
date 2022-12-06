@@ -1,10 +1,10 @@
 import networkx as nx
 from loguru import logger
 from .asset import AssetStatus
-from .resource import ResourceInitResult
 import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 from collections.abc import Iterable
+import pendulum as plm
 #import notifiers
 
 _NODE_COLORS = {AssetStatus.Current : "tab:green",
@@ -72,7 +72,7 @@ class AssetGraph:
         #self._stale_topological_sort = True
         logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
 
-    def update_status(self):
+    def propagate_status(self):
         # Status propagates using the following cascade of rules:
         # 0. If I'm Failed and self.allow_retry = False, I'm Failed
         # 1. If any of my parents is Paused or UpstreamPaused or Failed, I'm UpstreamPaused.
@@ -98,14 +98,14 @@ class AssetGraph:
             if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
                 continue
-            parent_paused_failed = False
+            any_paused_failed = False
             any_stale_unav = False
             latest_parent_timestamp = AssetStatus.Unavailable
             for parent in self.graph.predecessors(asset):
                 logger.debug(f"Checking parent {parent} with status {parent.status} and timestamp {parent._cached_timestamp}")
                 if parent.status == AssetStatus.Paused or parent.status == AssetStatus.UpstreamPaused or parent.status == AssetStatus.Failed:
                     any_paused_failed = True
-                if parent.status == AssetStatus.Stale or parent.status == AssetStatus.Failed or parent.status == AssetStatus.Unavailable:
+                if parent.status == AssetStatus.Stale or parent.status == AssetStatus.Unavailable:
                     any_stale_unav = True
                 # don't try to compute timestamps if any parent is paused, since they may not exist (and have no cached ts)
                 if parent.status != AssetStatus.Unavailable and (not any_paused_failed):
@@ -127,12 +127,13 @@ class AssetGraph:
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp unavailable)")
                 continue
 
-            if any_stale_unav: or (timestamp < latest_parent_timestamp):
+            if any_stale_unav:
                 asset.status = AssetStatus.Stale
-                logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent stale/failed/unavailable)")
+                logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent stale/unavailable)")
                 continue
 
-            if timestamp < latest_parent_timestamp:
+            #check for unavailable; if so, since any_stale_unav = False, this is a root node with no parent, so move on
+            if (latest_parent_timestamp != AssetStatus.Unavailable) and (timestamp < latest_parent_timestamp): 
                 asset.status = AssetStatus.Stale
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp older than parent)")
                 continue
@@ -145,8 +146,8 @@ class AssetGraph:
         return
 
     def _initialize_resources(self, resources):
-        logger.info(f"Initializing {len(required_resources)} build resources")
-        for resource in required_resources:
+        logger.info(f"Initializing {len(resources)} build resources")
+        for resource in resources:
             try:
                 logger.debug(f"Initializing resource {resource}")
                 resource.init()
@@ -157,9 +158,9 @@ class AssetGraph:
         return True
 
     def _cleanup_resources(self, resources):
-        logger.info(f"Cleaning up {len(required_resources)} build resources")
+        logger.info(f"Cleaning up {len(resources)} build resources")
         #cleanup resources
-        for resource in required_resources:
+        for resource in resources:
             try:
                 logger.debug(f"Cleaning up resource {resource}")
                 resource.close()
@@ -327,7 +328,7 @@ class AssetGraph:
                 elif len({asset.status for asset in groupings[gr][sb]}) == 1 and groupings[gr][sb][0].status != AssetStatus.Failed:
                     status_groups[groupings[gr][sb][0].status] += 1
             for sg in status_groups:
-                summary += f"        {sg}: {status_groups[sg]} subgroups/singletons\n"
+                summary += f"        {fmt(sg)}: {status_groups[sg]} subgroups/singletons\n"
             # collect and report special cases
             for sb in groupings[gr]:
                 if sb == '__singletons__':

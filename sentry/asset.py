@@ -17,7 +17,7 @@ class Asset:
         self.key = key
         self.hash = hash(key)
         self.dependencies = dependencies
-        self.resources = resources
+        self.resources = [] if (resources is None) else resources
         self.status = AssetStatus.Unavailable
         self.message = ""
         self.group = group

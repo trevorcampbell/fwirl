@@ -3,9 +3,9 @@ import pendulum as plm
 import random
 
 class ReliableAsset(sentry.Asset):
-    def __init__(self, key, dependencies, group = None, subgroup = None):
+    def __init__(self, key, dependencies, resources = None, group = None, subgroup = None):
         self._built = False
-        super(ReliableAsset,self).__init__(key,dependencies, group, subgroup)
+        super(ReliableAsset,self).__init__(key, dependencies, resources, group, subgroup)
 
     def build(self):
         self._built = True
@@ -16,9 +16,9 @@ class ReliableAsset(sentry.Asset):
         return self._ts if self._built else sentry.AssetStatus.Unavailable
 
 class UnreliableAsset(sentry.Asset):
-    def __init__(self, key, dependencies, group = None, subgroup = None):
+    def __init__(self, key, dependencies, resources = None, group = None, subgroup = None):
         self._built = False
-        super(UnreliableAsset,self).__init__(key,dependencies, group, subgroup)
+        super(UnreliableAsset,self).__init__(key, dependencies, resources, group, subgroup)
 
     def build(self):
         # with P = 0.4, the asset is created successfully
@@ -31,8 +31,8 @@ class UnreliableAsset(sentry.Asset):
         #elif r <= 0.7:
         #    raise Exception
         else:
-            self._built = True
-            self._ts = plm.now()
+            #self._built = True
+            #self._ts = plm.now()
             raise Exception
         return 3
 
@@ -56,8 +56,21 @@ g.add_assets(li)
 b = ReliableAsset("Final", final)
 g.add_assets([b])
 
-g.propagate_status()
-g.build()
-
+print("initial")
 g.summarize()
+input()
 
+g.propagate_status()
+print("propagate")
+g.summarize()
+input()
+
+g.build()
+print("build")
+g.summarize()
+input()
+
+g.propagate_status()
+print("propagate")
+g.summarize()
+input()
