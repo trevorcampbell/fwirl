@@ -75,4 +75,6 @@ print("refresh")
 g.summarize()
 input()
 
-g.schedule([a], build="* * * *", refresh="* * * *")
+g.schedule([a], key, build="* * * *", refresh="* * * *")
+
+g.run()
