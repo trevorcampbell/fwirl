@@ -6,6 +6,8 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 import pendulum as plm
 #import notifiers
+from kombu import Connection, Exchange, Queue
+from .schedule import Schedule
 
 _NODE_COLORS = {AssetStatus.Current : "tab:green",
                 AssetStatus.Stale : "khaki",
@@ -32,8 +34,11 @@ def fmt(status):
     return f"\033[{_LOGURU_COLORS[status]}m{status}\033[00m\u001b[1m"
 
 class AssetGraph:
-    def __init__(self):
+    def __init__(self, key, rabbit_url = "amqp://guest:guest@localhost//"):
         self.graph = nx.DiGraph()
+        self.key = key
+        self.schedules = {}
+        self.rabbit_url = rabbit_url
         #self._stale_topological_sort = True
         #self._cached_topological_sort = None
 
@@ -71,6 +76,54 @@ class AssetGraph:
         new_nodes = self.graph.number_of_nodes()
         #self._stale_topological_sort = True
         logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
+
+    def schedule(self, schedule_key, cron_string, asset = None):
+        jobstr = "build all" if asset is None else f"build upstream of {asset}"
+        logger.info(f"Adding scheduled run '{schedule_key}' ({jobstring} at '{cron_string}') to graph {self.key}")
+        self.schedules[schedule_key] = Schedule(cron_string, asset)
+
+    def pause_schedule(self, schedule_key):
+        self.schedules[schedule_key].pause()
+
+    def unpause_schedule(self, schedule_key):
+        self.schedules[schedule_key].unpause()
+
+    def on_message(self, body, message):
+        print(f"received message: {body}")
+        message.ack()
+        if body == "summarize":
+            self.summarize()
+
+    def run(self):
+        # run the message handling loop
+        logger.info(f"Beginning sentry main loop")
+        exchange = Exchange('sentry', 'direct', durable = False)
+        queue = Queue(self.key, exchange=exchange, routing_key = self.key)
+        with Connection(self.rabbit_url) as conn:
+            with conn.Consumer(rabbit_queue, callbacks=[self.on_message]):
+                while True:
+                    # get next earliest event from the schedules
+                    min_wait = None
+                    next_sk = None
+                    for sk in self.schedules:
+                        if not self.schedules[sk].is_paused():
+                            wait = self.schedules[sk].next()
+                            if min_wait is None or min_wait > wait:
+                                min_wait = wait
+                                next_sched = sk
+                    if min_wait is None:
+                        logger.info(f"Waiting on message queue (no timeout)")
+                    else:
+                        logger.info(f"Waiting on message queue and next run of {self.schedules[next_sk]} at {plm.now() + plm.duration(seconds=min_wait)}")
+                    try:
+                        conn.drain_events(timeout = min_wait)
+                    except KeyboardInterrupt:
+                        logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
+                        break
+                    # do something with next_sched
+                    logger.info(f"Running scheduled event {next_sk}")
+                    # TODO run the event
+
 
     def refresh_status(self):
         # Status propagates using the following cascade of rules:
@@ -133,7 +186,7 @@ class AssetGraph:
                 continue
 
             #check for unavailable; if so, since any_stale_unav = False, this is a root node with no parent, so move on
-            if (latest_parent_timestamp != AssetStatus.Unavailable) and (timestamp < latest_parent_timestamp): 
+            if (latest_parent_timestamp != AssetStatus.Unavailable) and (timestamp < latest_parent_timestamp):
                 asset.status = AssetStatus.Stale
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp older than parent)")
                 continue
