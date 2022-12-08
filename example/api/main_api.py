@@ -1,24 +1,24 @@
-import momo
+import fwirl
 
 
-#momo.summarize("test_graph")
+#fwirl.summarize("test_graph")
 
-momo.ls("test_graph", True, False)
+fwirl.ls("test_graph", True, False)
 
-momo.pause("test_graph", asset="blah")
-momo.pause("test_graph", schedule="blah")
-momo.pause("test_graph")
-momo.pause("test_graph", schedule="blah", asset="bloh")
+fwirl.pause("test_graph", asset="blah")
+fwirl.pause("test_graph", schedule="blah")
+fwirl.pause("test_graph")
+fwirl.pause("test_graph", schedule="blah", asset="bloh")
 
-momo.unpause("test_graph", asset="blah")
-momo.unpause("test_graph", schedule="blah")
-momo.unpause("test_graph")
-momo.unpause("test_graph", schedule="blah", asset="bloh")
-
-
-momo.schedule("test_graph", "blah", "* * * * *")
-momo.unschedule("test_graph", "blah")
+fwirl.unpause("test_graph", asset="blah")
+fwirl.unpause("test_graph", schedule="blah")
+fwirl.unpause("test_graph")
+fwirl.unpause("test_graph", schedule="blah", asset="bloh")
 
 
-momo.build("test_graph")
-momo.refresh("test_graph")
+fwirl.schedule("test_graph", "blah", "* * * * *")
+fwirl.unschedule("test_graph", "blah")
+
+
+fwirl.build("test_graph")
+fwirl.refresh("test_graph")

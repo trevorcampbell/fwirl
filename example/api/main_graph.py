@@ -1,8 +1,8 @@
-import momo
+import fwirl
 import pendulum as plm
 import random
 
-class ReliableAsset(momo.Asset):
+class ReliableAsset(fwirl.Asset):
     def __init__(self, key, dependencies, resources = None, group = None, subgroup = None):
         self._built = False
         super(ReliableAsset,self).__init__(key, dependencies, resources, group, subgroup)
@@ -13,9 +13,9 @@ class ReliableAsset(momo.Asset):
         return 3
 
     def timestamp(self):
-        return self._ts if self._built else momo.AssetStatus.Unavailable
+        return self._ts if self._built else fwirl.AssetStatus.Unavailable
 
-class UnreliableAsset(momo.Asset):
+class UnreliableAsset(fwirl.Asset):
     def __init__(self, key, dependencies, resources = None, group = None, subgroup = None):
         self._built = False
         super(UnreliableAsset,self).__init__(key, dependencies, resources, group, subgroup)
@@ -37,11 +37,11 @@ class UnreliableAsset(momo.Asset):
         return 3
 
     def timestamp(self):
-        return self._ts if self._built else momo.AssetStatus.Unavailable
+        return self._ts if self._built else fwirl.AssetStatus.Unavailable
 
 # dependencies: Reliable -> Unreliable -> Reliable
 
-g = momo.AssetGraph("test_graph")
+g = fwirl.AssetGraph("test_graph")
 
 a = ReliableAsset("Reliable", [])
 li = []
