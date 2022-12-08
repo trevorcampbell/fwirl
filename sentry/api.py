@@ -1,15 +1,16 @@
 from kombu import Connection, Queue, Exchange
 import pendulum as plm
 
+__RABBIT_URL__ = "amqp://guest:guest@localhost//"
+
 def _get_exch_queue(graph_key):
     exch = Exchange('sentry', 'direct', durable=False)
     queue = Queue(graph_key, exchange=exch, routing_key=graph_key)
     return exch, queue
 
-def summarize(graph_key):
+def summarize(graph_key, rabbit_url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(graph_key)
-    _url = "amqp://guest:guest@localhost//"
-    with Connection(url) as conn:
+    with Connection(rabbit_url) as conn:
         producer = conn.Producer()
         producer.publish("summarize", exchange=exch, routing_key = graph_key, declare=[queue])
     # TODO consume a response queue for output

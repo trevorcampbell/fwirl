@@ -21,12 +21,18 @@ def build():
     click.echo("Building!")
 
 @click.command()
-def summarize():
-    click.echo("Summarizing!")
-
-@click.command()
 def schedule():
     click.echo("Scheduling!")
+
+@click.command()
+def list():
+    click.echo("Listing graphs!")
+
+@click.command()
+def summarize():
+    click.echo("Summarizing a graph!")
+
+
 
 cli.add_command(pause)
 cli.add_command(clear_failure)

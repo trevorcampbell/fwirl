@@ -112,7 +112,7 @@ class AssetGraph:
                                 min_wait = wait
                                 next_sched = sk
                     if min_wait is None:
-                        logger.info(f"Waiting on message queue (no timeout)")
+                        logger.info(f"Waiting on message queue (no scheduled runs)")
                     else:
                         logger.info(f"Waiting on message queue and next run of {self.schedules[next_sk]} at {plm.now() + plm.duration(seconds=min_wait)}")
                     try:
