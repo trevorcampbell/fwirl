@@ -1,14 +1,36 @@
 import click
 
+@click.group()
+def cli():
+    pass
+
 @click.command()
-def hello():
-    click.echo("Hello world!")
+def pause():
+    click.echo("Pausing!")
 
-# TODO:
-# - pause asset (certain/all assets)
-# - clear failure (certain/all assets)
-# - update status now (certain/all assets)
-# - run build now (certain/all assets)
-# - print summary of status
-# - update schedule for an ongoing build/update task
+@click.command()
+def clear_failure():
+    click.echo("Clearing failure!")
 
+@click.command()
+def refresh():
+    click.echo("Refreshing status!")
+
+@click.command()
+def build():
+    click.echo("Building!")
+
+@click.command()
+def summarize():
+    click.echo("Summarizing!")
+
+@click.command()
+def schedule():
+    click.echo("Scheduling!")
+
+cli.add_command(pause)
+cli.add_command(clear_failure)
+cli.add_command(refresh)
+cli.add_command(build)
+cli.add_command(summarize)
+cli.add_command(schedule)

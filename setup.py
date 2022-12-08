@@ -14,7 +14,7 @@ setup(
     ],
     entry_points={
         'console_scripts':[
-            'sentry = sentry.cli:hello',
+            'sentry = sentry.cli:cli',
         ],
     },
     platforms='ALL',
