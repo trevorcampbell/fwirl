@@ -9,6 +9,9 @@ import pendulum as plm
 from kombu import Connection, Exchange, Queue
 from .schedule import Schedule
 
+__RABBIT_URL__ = "amqp://guest:guest@localhost//"
+__MESSAGE_TTL__ = 1
+
 _NODE_COLORS = {AssetStatus.Current : "tab:green",
                 AssetStatus.Stale : "khaki",
                 AssetStatus.Building : "tab:blue",
@@ -34,11 +37,10 @@ def fmt(status):
     return f"\033[{_LOGURU_COLORS[status]}m{status}\033[00m\u001b[1m"
 
 class AssetGraph:
-    def __init__(self, key, rabbit_url = "amqp://guest:guest@localhost//"):
+    def __init__(self, key):
         self.graph = nx.DiGraph()
         self.key = key
         self.schedules = {}
-        self.rabbit_url = rabbit_url
         #self._stale_topological_sort = True
         #self._cached_topological_sort = None
 
@@ -89,18 +91,33 @@ class AssetGraph:
         self.schedules[schedule_key].unpause()
 
     def on_message(self, body, message):
-        print(f"received message: {body}")
-        message.ack()
-        if body == "summarize":
+        logger.info(f"Received {body['type']} command")
+        logger.debug(f"Message body: {body}")
+        if body["type"] == "summarize":
             self.summarize()
+        if body["type"] == "ls":
+            pass #TODO ls
+        if body["type"] == "build":
+            pass #TODO build
+        if body["type"] == "refresh":
+            pass #TODO refresh
+        if body["type"] == "pause":
+            pass #TODO refresh
+        if body["type"] == "unpause":
+            pass #TODO refresh
+        if body["type"] == "schedule":
+            pass #TODO refresh
+        if body["type"] == "unschedule":
+            pass #TODO refresh
+        message.ack()
 
     def run(self):
         # run the message handling loop
         logger.info(f"Beginning sentry main loop")
         exchange = Exchange('sentry', 'direct', durable = False)
-        queue = Queue(self.key, exchange=exchange, routing_key = self.key)
-        with Connection(self.rabbit_url) as conn:
-            with conn.Consumer(rabbit_queue, callbacks=[self.on_message]):
+        queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
+        with Connection(__RABBIT_URL__) as conn:
+            with conn.Consumer(queue, callbacks=[self.on_message]):
                 while True:
                     # get next earliest event from the schedules
                     min_wait = None
@@ -120,9 +137,10 @@ class AssetGraph:
                     except KeyboardInterrupt:
                         logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
                         break
-                    # do something with next_sched
-                    logger.info(f"Running scheduled event {next_sk}")
-                    # TODO run the event
+                    except TimeoutError:
+                        # do something with next_sched
+                        logger.info(f"Running scheduled event {next_sk}")
+                        # TODO run the event
 
 
     def refresh_status(self):
