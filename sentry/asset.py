@@ -24,7 +24,6 @@ class Asset:
         self.subgroup = subgroup
         self.allow_retry = allow_retry
         self._last_build_timestamp = AssetStatus.Unavailable
-        self._cached_timestamp = AssetStatus.Unavailable
 
     def __hash__(self):
         return self.hash
@@ -37,10 +36,6 @@ class Asset:
 
     def get_key(self):
         return self.key
-
-    def _timestamp(self):
-        self._cached_timestamp = self.timestamp()
-        return self._cached_timestamp
 
     @abstractmethod
     def timestamp(self):
