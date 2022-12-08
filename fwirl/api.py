@@ -33,27 +33,27 @@ def build(graph_key, rabbit_url = __RABBIT_URL__):
         producer = conn.Producer()
         producer.publish({"type": "build"}, exchange=exch, routing_key = graph_key, declare=[queue])
 
-def pause(graph_key, asset=None, schedule=None, rabbit_url = __RABBIT_URL__):
+def pause(graph_key, asset_key=None, schedule=None, rabbit_url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(graph_key)
     with Connection(rabbit_url) as conn:
         producer = conn.Producer()
-        producer.publish({"type": "pause", "asset" : asset, "schedule" : schedule}, exchange=exch, routing_key = graph_key, declare=[queue])
+        producer.publish({"type": "pause", "asset_key" : asset_key, "schedule" : schedule}, exchange=exch, routing_key = graph_key, declare=[queue])
 
-def unpause(graph_key, asset=None, schedule=None, rabbit_url = __RABBIT_URL__):
+def unpause(graph_key, asset_key=None, schedule=None, rabbit_url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(graph_key)
     with Connection(rabbit_url) as conn:
         producer = conn.Producer()
-        producer.publish({"type": "unpause", "asset" : asset, "schedule" : schedule}, exchange=exch, routing_key = graph_key, declare=[queue])
+        producer.publish({"type": "unpause", "asset_key" : asset_key, "schedule" : schedule}, exchange=exch, routing_key = graph_key, declare=[queue])
 
-def schedule(graph_key, schedule_key, schedule, rabbit_url = __RABBIT_URL__):
+def schedule(graph_key, schedule_key, cron_str, asset_key=None, rabbit_url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(graph_key)
     with Connection(rabbit_url) as conn:
         producer = conn.Producer()
-        producer.publish({"type": "schedule", "key" : schedule_key, "schedule" : schedule}, exchange=exch, routing_key = graph_key, declare=[queue])
+        producer.publish({"type": "schedule", "schedule_key" : schedule_key, "cron_str" : cron_str, "asset_key" : asset_key}, exchange=exch, routing_key = graph_key, declare=[queue])
 
 def unschedule(graph_key, schedule_key, rabbit_url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(graph_key)
     with Connection(rabbit_url) as conn:
         producer = conn.Producer()
-        producer.publish({"type": "unschedule", "key" : schedule_key}, exchange=exch, routing_key = graph_key, declare=[queue])
+        producer.publish({"type": "unschedule", "schedule_key" : schedule_key}, exchange=exch, routing_key = graph_key, declare=[queue])
 

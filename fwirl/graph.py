@@ -1,6 +1,6 @@
 import networkx as nx
 from loguru import logger
-from .asset import AssetStatus
+from .asset import AssetStatus, _UnusedAsset
 import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 from collections.abc import Iterable
@@ -77,9 +77,31 @@ class AssetGraph:
         #self._stale_topological_sort = True
         logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
 
+    def list_assets(self):
+        if self.graph.number_of_nodes() == 0:
+            logger.info(f"No assets to list.")
+        else:
+            s = "Assets:\n"
+            for asset in self.graph:
+                s += f"- {asset.key}: {fmt(asset.status)}\n"
+            logger.info(s)
+
+    def list_schedules(self):
+        if len(self.schedules) == 0:
+            logger.info(f"No schedules to list.")
+        else:
+            s = "Schedules:\n"
+            for sch in self.schedules:
+                s += f"- {sch}: {self.schedules[sch]}"
+            logger.info(s)
+
     def schedule(self, schedule_key, cron_string, asset = None):
+        if schedule_key in self.schedules:
+            logger.error(f"Tried to add schedule key {schedule_key}, but it already exists. Skipping.")
+            return
+        # find asset corresponding to asset_key
         jobstr = "build all" if asset is None else f"build upstream of {asset}"
-        logger.info(f"Adding scheduled run '{schedule_key}' ({jobstring} at '{cron_string}') to graph {self.key}")
+        logger.info(f"Adding scheduled run '{schedule_key}' ({jobstr} at '{cron_string}') to graph {self.key}")
         self.schedules[schedule_key] = Schedule(cron_string, asset)
 
     def unschedule(self, schedule_key):
@@ -95,22 +117,41 @@ class AssetGraph:
     def on_message(self, body, message):
         logger.info(f"Received {body['type']} command")
         logger.debug(f"Message body: {body}")
+
         if body["type"] == "summarize":
             self.summarize()
+
         if body["type"] == "ls":
-            pass #TODO ls
+            if body["assets"]:
+                self.list_assets()
+            if body["schedules"]:
+                self.list_schedules()
+
         if body["type"] == "build":
             pass #TODO build
+
         if body["type"] == "refresh":
             pass #TODO refresh
+
         if body["type"] == "pause":
             pass #TODO refresh
+
         if body["type"] == "unpause":
             pass #TODO refresh
+
         if body["type"] == "schedule":
-            pass #TODO refresh
+            # get asset from key
+            logger.info(self.graph.nodes.keys())
+            asset = None if body["asset_key"] is None else self.graph.nodes[_UnusedAsset(body["asset_key"])]
+            logger.info(body["asset_key"])
+            logger.info(asset)
+            logger.info(_UnusedAsset(body["asset_key"]) if asset is not None else None)
+
+            self.schedule(body["schedule_key"], body["cron_str"], asset)
+
         if body["type"] == "unschedule":
-            pass #TODO refresh
+            self.unschedule(body["schedule_key"])
+
         message.ack()
 
     def run(self):
@@ -129,7 +170,7 @@ class AssetGraph:
                             wait = self.schedules[sk].next()
                             if min_wait is None or min_wait > wait:
                                 min_wait = wait
-                                next_sched = sk
+                                next_sk = sk
                     if min_wait is None:
                         logger.info(f"Waiting on message queue (no scheduled runs)")
                     else:

@@ -32,7 +32,8 @@ class Asset:
         return self.hash == rhs.hash
 
     def __repr__(self):
-        return self.__class__.__name__ + f"({self.key})"
+        #return self.__class__.__name__ + f"({self.key})"
+        return self.key
 
     def get_key(self):
         return self.key
@@ -57,7 +58,7 @@ class ExternalAsset(Asset):
         self.last_poll = AssetStatus.Unavailable
         self._cached_timestamp = AssetStatus.Unavailable
         self._cached_val = AssetStatus.Unavailable
-        super(self, ExternalAsset).__init__(key, dependencies, resources=resources, group=group, subgroup=subgroup, allow_retry=allow_retry)
+        super(ExternalAsset,self).__init__(key, dependencies, resources=resources, group=group, subgroup=subgroup, allow_retry=allow_retry)
 
     # TODO also add a put method and allow this program to update the external resource
     # TODO self.get error handling?
@@ -80,4 +81,15 @@ class ExternalAsset(Asset):
 
     @abstractmethod
     def diff(self, val1, val2):
+        pass
+
+# This asset is just used internally for doing graph searches by key
+class _UnusedAsset(Asset):
+    def __init__(self, key):
+        super(_UnusedAsset,self).__init__(key, [])
+
+    def timestamp(self):
+        pass
+
+    def build(self):
         pass
