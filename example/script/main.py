@@ -41,7 +41,7 @@ class UnreliableAsset(sentry.Asset):
 
 # dependencies: Reliable -> Unreliable -> Reliable
 
-g = sentry.AssetGraph()
+g = sentry.AssetGraph("test_graph")
 
 a = ReliableAsset("Reliable", [])
 li = []
@@ -56,25 +56,21 @@ g.add_assets(li)
 b = ReliableAsset("Final", final)
 g.add_assets([b])
 
-print("initial")
 g.summarize()
+print("initial")
 input()
 
 g.refresh_status()
-print("refresh")
 g.summarize()
+print("refresh")
 input()
 
 g.build()
-print("build")
 g.summarize()
+print("build")
 input()
 
 g.refresh_status()
-print("refresh")
 g.summarize()
+print("refresh")
 input()
-
-g.schedule([a], key, build="* * * *", refresh="* * * *")
-
-g.run()
