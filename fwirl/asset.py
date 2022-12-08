@@ -87,6 +87,7 @@ class ExternalAsset(Asset):
 class _UnusedAsset(Asset):
     def __init__(self, key):
         super(_UnusedAsset,self).__init__(key, [])
+        self.status = "__UNUSED_ASSET_NO_STATUS__" #just to flag that this node is not to be used as an actual asset, just for graph lookup
 
     def timestamp(self):
         pass

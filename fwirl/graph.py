@@ -1,6 +1,6 @@
 import networkx as nx
 from loguru import logger
-from .asset import AssetStatus, _UnusedAsset
+from .asset import Asset, AssetStatus, _UnusedAsset
 import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 from collections.abc import Iterable
@@ -96,6 +96,7 @@ class AssetGraph:
             logger.info(s)
 
     def schedule(self, schedule_key, cron_string, asset = None):
+        logger.info(f"Adding new schedule with key {schedule_key}")
         if schedule_key in self.schedules:
             logger.error(f"Tried to add schedule key {schedule_key}, but it already exists. Skipping.")
             return
@@ -106,6 +107,8 @@ class AssetGraph:
 
     def unschedule(self, schedule_key):
         logger.info(f"Removing scheduled run '{schedule_key}'")
+        if schedule_key not in self.schedules:
+            logger.warning(f"Schedule {schedule_key} not in schedules.")
         self.schedules.pop(schedule_key, None)
 
     def pause_schedule(self, schedule_key):
@@ -140,13 +143,13 @@ class AssetGraph:
             pass #TODO refresh
 
         if body["type"] == "schedule":
-            # get asset from key
-            logger.info(self.graph.nodes.keys())
-            asset = None if body["asset_key"] is None else self.graph.nodes[_UnusedAsset(body["asset_key"])]
-            logger.info(body["asset_key"])
-            logger.info(asset)
-            logger.info(_UnusedAsset(body["asset_key"]) if asset is not None else None)
-
+            # we have to loop over keys in the graph, since our keys are objects
+            # and surprisingly i couldn't find a dict.get() method that returns a (key,val) tuple
+            # (since here we want the key, not the val)
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == body["asset_key"]:
+                    asset = _asset
             self.schedule(body["schedule_key"], body["cron_str"], asset)
 
         if body["type"] == "unschedule":
@@ -174,15 +177,16 @@ class AssetGraph:
                     if min_wait is None:
                         logger.info(f"Waiting on message queue (no scheduled runs)")
                     else:
-                        logger.info(f"Waiting on message queue and next run of {self.schedules[next_sk]} at {plm.now() + plm.duration(seconds=min_wait)}")
+                        logger.info(f"Waiting on message queue and next run of {next_sk} ({self.schedules[next_sk]}) at {plm.now() + plm.duration(seconds=min_wait)}")
                     try:
                         conn.drain_events(timeout = min_wait)
                     except KeyboardInterrupt:
                         logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
                         break
                     except TimeoutError:
-                        # do something with next_sched
+                        # do something with next_sk
                         logger.info(f"Running scheduled event {next_sk}")
+                        #self.build_upstream(self.schedules[next_sk].asset)
                         # TODO run the event
 
     def _initialize_resources(self, resources):
@@ -229,11 +233,12 @@ class AssetGraph:
         self._build(sorted_nodes)
 
     def build_upstream(self, asset_or_assets):
-        logger.info(f"Building assets upstream of {asset_or_assets}")
+        logger.info(f"Building assets upstream of (and including) {asset_or_assets}")
         if isinstance(asset_or_assets, Asset):
             asset_or_assets = [asset_or_assets]
         nodes_to_build = []
         for asset in asset_or_assets:
+            nodes_to_build.append(asset)
             nodes_to_build.extend(nx.ancestors(self.graph, asset))
         sg = self.graph.subgraph(nodes_to_build)
         sorted_nodes = list(nx.topological_sort(sg))

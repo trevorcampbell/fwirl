@@ -7,13 +7,13 @@ import fwirl
 fwirl.ls("test_graph", True, False)
 
 
-fwirl.ls("test_graph", False, True)
-fwirl.schedule("test_graph", "blah", "* * * * *")
-fwirl.ls("test_graph", False, True)
-fwirl.schedule("test_graph", "blah", "* * * * *", "Reliable")
-fwirl.ls("test_graph", False, True)
-fwirl.unschedule("test_graph", "blah")
-fwirl.ls("test_graph", False, True)
+#fwirl.ls("test_graph", False, True)
+#fwirl.schedule("test_graph", "blah", "* * * * *")
+#fwirl.ls("test_graph", False, True)
+#fwirl.schedule("test_graph", "blah", "* * * * *", "Reliable")
+#fwirl.ls("test_graph", False, True)
+#fwirl.unschedule("test_graph", "blah")
+#fwirl.ls("test_graph", False, True)
 fwirl.schedule("test_graph", "blah", "* * * * *", "Reliable")
 fwirl.ls("test_graph", False, True)
 
