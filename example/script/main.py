@@ -1,8 +1,8 @@
-import sentry
+import momo
 import pendulum as plm
 import random
 
-class ReliableAsset(sentry.Asset):
+class ReliableAsset(momo.Asset):
     def __init__(self, key, dependencies, resources = None, group = None, subgroup = None):
         self._built = False
         super(ReliableAsset,self).__init__(key, dependencies, resources, group, subgroup)
@@ -13,9 +13,9 @@ class ReliableAsset(sentry.Asset):
         return 3
 
     def timestamp(self):
-        return self._ts if self._built else sentry.AssetStatus.Unavailable
+        return self._ts if self._built else momo.AssetStatus.Unavailable
 
-class UnreliableAsset(sentry.Asset):
+class UnreliableAsset(momo.Asset):
     def __init__(self, key, dependencies, resources = None, group = None, subgroup = None):
         self._built = False
         super(UnreliableAsset,self).__init__(key, dependencies, resources, group, subgroup)
@@ -37,11 +37,11 @@ class UnreliableAsset(sentry.Asset):
         return 3
 
     def timestamp(self):
-        return self._ts if self._built else sentry.AssetStatus.Unavailable
+        return self._ts if self._built else momo.AssetStatus.Unavailable
 
 # dependencies: Reliable -> Unreliable -> Reliable
 
-g = sentry.AssetGraph("test_graph")
+g = momo.AssetGraph("test_graph")
 
 a = ReliableAsset("Reliable", [])
 li = []

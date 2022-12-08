@@ -1,24 +1,24 @@
-import sentry
+import momo
 
 
-#sentry.summarize("test_graph")
+#momo.summarize("test_graph")
 
-sentry.ls("test_graph", True, False)
+momo.ls("test_graph", True, False)
 
-sentry.pause("test_graph", asset="blah")
-sentry.pause("test_graph", schedule="blah")
-sentry.pause("test_graph")
-sentry.pause("test_graph", schedule="blah", asset="bloh")
+momo.pause("test_graph", asset="blah")
+momo.pause("test_graph", schedule="blah")
+momo.pause("test_graph")
+momo.pause("test_graph", schedule="blah", asset="bloh")
 
-sentry.unpause("test_graph", asset="blah")
-sentry.unpause("test_graph", schedule="blah")
-sentry.unpause("test_graph")
-sentry.unpause("test_graph", schedule="blah", asset="bloh")
-
-
-sentry.schedule("test_graph", "blah", "* * * * *")
-sentry.unschedule("test_graph", "blah")
+momo.unpause("test_graph", asset="blah")
+momo.unpause("test_graph", schedule="blah")
+momo.unpause("test_graph")
+momo.unpause("test_graph", schedule="blah", asset="bloh")
 
 
-sentry.build("test_graph")
-sentry.refresh("test_graph")
+momo.schedule("test_graph", "blah", "* * * * *")
+momo.unschedule("test_graph", "blah")
+
+
+momo.build("test_graph")
+momo.refresh("test_graph")
