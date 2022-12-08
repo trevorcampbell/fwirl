@@ -8,7 +8,7 @@ class AssetStatus(Enum):
     Stale = 1
     Building = 2
     Paused = 3
-    UpstreamPaused = 4
+    UpstreamStopped = 4
     Unavailable = 5
     Failed = 6
 

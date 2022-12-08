@@ -16,7 +16,7 @@ _NODE_COLORS = {AssetStatus.Current : "tab:green",
                 AssetStatus.Stale : "khaki",
                 AssetStatus.Building : "tab:blue",
                 AssetStatus.Paused : "slategray",
-                AssetStatus.UpstreamPaused : "lightslategray",
+                AssetStatus.UpstreamStopped : "lightslategray",
                 AssetStatus.Unavailable : "gray",
                 AssetStatus.Failed : "tab:red"
             }
@@ -26,7 +26,7 @@ _LOGURU_COLORS = {AssetStatus.Current : "32",
                 AssetStatus.Stale : "33",
                 AssetStatus.Building : "34",
                 AssetStatus.Paused : "35",
-                AssetStatus.UpstreamPaused : "35",
+                AssetStatus.UpstreamStopped : "35",
                 AssetStatus.Unavailable : "37",
                 AssetStatus.Failed : "91"
             }
@@ -146,7 +146,7 @@ class AssetGraph:
     def refresh_status(self):
         # Status propagates using the following cascade of rules:
         # 0. If I'm Failed and self.allow_retry = False, I'm Failed
-        # 1. If any of my parents is Paused or UpstreamPaused or Failed, I'm UpstreamPaused.
+        # 1. If any of my parents is Paused or UpstreamStopped or Failed, I'm UpstreamStopped.
         # 2. If I don't exist, I'm Unavailable.
         # 3. If any of my parents is Stale or Unavailable, I'm Stale
         # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
@@ -174,7 +174,7 @@ class AssetGraph:
             latest_parent_timestamp = AssetStatus.Unavailable
             for parent in self.graph.predecessors(asset):
                 logger.debug(f"Checking parent {parent} with status {parent.status} and timestamp {parent._cached_timestamp}")
-                if parent.status == AssetStatus.Paused or parent.status == AssetStatus.UpstreamPaused or parent.status == AssetStatus.Failed:
+                if parent.status == AssetStatus.Paused or parent.status == AssetStatus.UpstreamStopped or parent.status == AssetStatus.Failed:
                     any_paused_failed = True
                 if parent.status == AssetStatus.Stale or parent.status == AssetStatus.Unavailable:
                     any_stale_unav = True
@@ -188,7 +188,7 @@ class AssetGraph:
                 logger.debug(f"After processing parent {parent}: any_paused_failed = {any_paused_failed}, any_stale_unav = {any_stale_unav}, latest_ts = {latest_parent_timestamp}")
 
             if any_paused_failed:
-                asset.status = AssetStatus.UpstreamPaused
+                asset.status = AssetStatus.UpstreamStopped
                 logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent paused or failed)")
                 continue
 
