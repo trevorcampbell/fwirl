@@ -82,6 +82,10 @@ class AssetGraph:
         logger.info(f"Adding scheduled run '{schedule_key}' ({jobstring} at '{cron_string}') to graph {self.key}")
         self.schedules[schedule_key] = Schedule(cron_string, asset)
 
+    def unschedule(self, schedule_key):
+        logger.info(f"Removing scheduled run '{schedule_key}'")
+        self.schedules.pop(schedule_key, None)
+
     def pause_schedule(self, schedule_key):
         self.schedules[schedule_key].pause()
 
@@ -140,76 +144,6 @@ class AssetGraph:
                         logger.info(f"Running scheduled event {next_sk}")
                         # TODO run the event
 
-
-    def refresh_status(self):
-        # Status propagates using the following cascade of rules:
-        # 0. If I'm Failed and self.allow_retry = False, I'm Failed
-        # 1. If any of my parents is Paused or UpstreamStopped or Failed, I'm UpstreamStopped.
-        # 2. If I don't exist, I'm Unavailable.
-        # 3. If any of my parents is Stale or Unavailable, I'm Stale
-        # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
-        # 5. I'm Current
-        logger.info(f"Running status refresh & propagation on asset graph")
-        sorted_nodes = list(nx.topological_sort(self.graph))
-
-        required_resources = set()
-        for asset in sorted_nodes:
-            required_resources.update(asset.resources)
-        if not self._initialize_resources(required_resources):
-            return
-
-        for asset in sorted_nodes:
-            logger.debug(f"Updating status for asset {asset}")
-            if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
-                logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
-                continue
-            any_paused_failed = False
-            any_stale_unav = False
-            latest_parent_timestamp = AssetStatus.Unavailable
-            for parent in self.graph.predecessors(asset):
-                logger.debug(f"Checking parent {parent} with status {parent.status} and timestamp {parent.timestamp()}")
-                if parent.status == AssetStatus.Paused or parent.status == AssetStatus.UpstreamStopped or parent.status == AssetStatus.Failed:
-                    any_paused_failed = True
-                if parent.status == AssetStatus.Stale or parent.status == AssetStatus.Unavailable:
-                    any_stale_unav = True
-                # don't try to compute timestamps if any parent is paused, since they may not exist (and have no cached ts)
-                if parent.status != AssetStatus.Unavailable and (not any_paused_failed):
-                    ts = parent.timestamp()
-                    if latest_parent_timestamp == AssetStatus.Unavailable:
-                        latest_parent_timestamp = ts
-                    else:
-                        latest_parent_timestamp = latest_parent_timestamp if latest_parent_timestamp > ts else ts
-                logger.debug(f"After processing parent {parent}: any_paused_failed = {any_paused_failed}, any_stale_unav = {any_stale_unav}, latest_ts = {latest_parent_timestamp}")
-
-            if any_paused_failed:
-                asset.status = AssetStatus.UpstreamStopped
-                logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent paused or failed)")
-                continue
-
-            timestamp = asset.timestamp()
-            if timestamp == AssetStatus.Unavailable:
-                asset.status = AssetStatus.Unavailable
-                logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp unavailable)")
-                continue
-
-            if any_stale_unav:
-                asset.status = AssetStatus.Stale
-                logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent stale/unavailable)")
-                continue
-
-            #check for unavailable; if so, since any_stale_unav = False, this is a root node with no parent, so move on
-            if (latest_parent_timestamp != AssetStatus.Unavailable) and (timestamp < latest_parent_timestamp):
-                asset.status = AssetStatus.Stale
-                logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp older than parent)")
-                continue
-
-            asset.status = AssetStatus.Current
-            logger.info(f"Asset {asset} status: {fmt(asset.status)}")
-
-        self._cleanup_resources(required_resources)
-
-        return
-
     def _initialize_resources(self, resources):
         logger.info(f"Initializing {len(resources)} build resources")
         for resource in resources:
@@ -232,6 +166,27 @@ class AssetGraph:
             except Exception as e:
                 logger.exception(f"Resource {resource} cleanup failed; attempting to clean up other resources")
 
+    def refresh(self):
+        logger.info(f"Running status refresh & propagation on asset graph")
+        sorted_nodes = list(nx.topological_sort(self.graph))
+
+        required_resources = set()
+        for asset in sorted_nodes:
+            required_resources.update(asset.resources)
+        if not self._initialize_resources(required_resources):
+            return
+
+        for asset in sorted_nodes:
+            self._refresh_asset(asset)
+
+        self._cleanup_resources(required_resources)
+        return
+
+    def build(self):
+        logger.info(f"Building all assets")
+        sorted_nodes = list(nx.topological_sort(self.graph))
+        self._build(sorted_nodes)
+
     def build_upstream(self, asset_or_assets):
         logger.info(f"Building assets upstream of {asset_or_assets}")
         if isinstance(asset_or_assets, Asset):
@@ -243,28 +198,8 @@ class AssetGraph:
         sorted_nodes = list(nx.topological_sort(sg))
         self._build(sorted_nodes)
 
-    def build_downstream(self, asset_or_assets):
-        logger.info(f"Building assets downstream of {asset_or_assets}")
-        if isinstance(asset_or_assets, Asset):
-            asset_or_assets = [asset_or_assets]
-        nodes_to_build = []
-        for asset in asset_or_assets:
-            nodes_to_build.extend(nx.descendants(self.graph, asset))
-        sg = self.graph.subgraph(nodes_to_build)
-        sorted_nodes = list(nx.topological_sort(sg))
-        self._build(sorted_nodes)
-
-    def build(self):
-        logger.info(f"Building all assets")
-        sorted_nodes = list(nx.topological_sort(self.graph))
-        self._build(sorted_nodes)
-
     def _build(self, sorted_nodes):
         # Builds only happen for Unavailable and Stale assets whose parents are all Current
-        #if self._stale_topological_sort:
-        #    logger.info(f"Asset graph structure changed; recomputing the topological sort")
-        #    self._cached_topological_sort = list(nx.topological_sort(self.graph))
-        #    self._stale_topological_sort = False
 
         # collect and initialize required resources
         required_resources = set()
@@ -275,62 +210,119 @@ class AssetGraph:
 
         # loop over assets and build
         for asset in sorted_nodes:
-            parent_status_cts = Counter([p.status for p in self.graph.predecessors(asset)])
-            logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {(' '.join([str(item[0]) +': ' + str(item[1]) + ',' for item in list(parent_status_cts.items())]))[:-1]}")
-            if (asset.status == AssetStatus.Unavailable or asset.status == AssetStatus.Stale) and all(p.status == AssetStatus.Current for p in self.graph.predecessors(asset)):
-                logger.info(f"Asset {asset} is {fmt(asset.status)} and all parents are current; rebuilding")
-                # set building status
-                asset.status = AssetStatus.Building
-                asset._last_build_timestamp = plm.now()
-
-                # run the build
-                try:
-                    logger.debug(f"Building {asset}")
-                    asset.build()
-                except Exception as e:
-                    asset.status = AssetStatus.Failed
-                    asset.message = "Build failed: exception during build"
-                    logger.exception(f"Asset {asset} build failed (status: {asset.status}): error in-build")
-                    continue
-
-                # refresh the timestamp cache
-                ts = asset.timestamp()
-                logger.debug(f"New asset {asset} timestamp: {ts}")
-
-                # get latest parent timestamp
-                parents = list(self.graph.predecessors(asset))
-                if len(parents) == 0:
-                    logger.debug(f"Latest parent asset timestamp: (no parents)")
-                else:
-                    latest_parent_timestamp = max([p.timestamp() for p in parents])
-                    logger.debug(f"Latest parent asset timestamp: {latest_parent_timestamp}")
-                    if ts < latest_parent_timestamp:
-                        raise RuntimeError("Rebuilt asset has timestamp earlier than latest parent!")
-
-                # make sure asset is now available and has a new timestamp
-                if ts is AssetStatus.Unavailable:
-                    asset.status = AssetStatus.Failed
-                    asset.message = "Build failed: asset unavailable"
-                    logger.error(f"Asset {asset} build failed (status: {asset.status}): asset unavailable after build")
-                    continue
-
-                # ensure that it now has a newer timestamp than parents
-                if not all(p.timestamp() < asset.timestamp() for p in self.graph.predecessors(asset)):
-                    asset.status = AssetStatus.Failed
-                    asset.message = "Build failed: asset timestamp older than parents"
-                    logger.error(f"Asset {asset} build failed (status: {asset.status}): asset timestamp older than parents")
-                    continue
-
-                # update to current status
-                asset.status = AssetStatus.Current
-                asset.message = "Build complete"
-                logger.info(f"Asset {asset} build completed successfully (status: {fmt(asset.status)})")
-            else:
-                logger.debug(f"Asset {asset} not ready to rebuild.")
+            self._refresh_asset(asset)
+            self._build_asset(asset)
 
         self._cleanup_resources(required_resources)
 
-        return
+    def _refresh_asset(self, asset):
+        # Status propagates using the following cascade of rules:
+        # 0. If I'm Failed and self.allow_retry = False, I'm Failed
+        # 1. If any of my parents is Paused or UpstreamStopped or Failed, I'm UpstreamStopped.
+        # 2. If I don't exist, I'm Unavailable.
+        # 3. If any of my parents is Stale or Unavailable, I'm Stale
+        # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
+        # 5. I'm Current
+        logger.debug(f"Updating status for asset {asset}")
+        if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
+            logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
+            return
+        any_paused_failed = False
+        any_stale_unav = False
+        latest_parent_timestamp = AssetStatus.Unavailable
+        for parent in self.graph.predecessors(asset):
+            logger.debug(f"Checking parent {parent} with status {parent.status} and timestamp {parent.timestamp()}")
+            if parent.status == AssetStatus.Paused or parent.status == AssetStatus.UpstreamStopped or parent.status == AssetStatus.Failed:
+                any_paused_failed = True
+            if parent.status == AssetStatus.Stale or parent.status == AssetStatus.Unavailable:
+                any_stale_unav = True
+            # don't try to compute timestamps if any parent is paused, since they may not exist (and have no cached ts)
+            if parent.status != AssetStatus.Unavailable and (not any_paused_failed):
+                ts = parent.timestamp()
+                if latest_parent_timestamp == AssetStatus.Unavailable:
+                    latest_parent_timestamp = ts
+                else:
+                    latest_parent_timestamp = latest_parent_timestamp if latest_parent_timestamp > ts else ts
+            logger.debug(f"After processing parent {parent}: any_paused_failed = {any_paused_failed}, any_stale_unav = {any_stale_unav}, latest_ts = {latest_parent_timestamp}")
+
+        if any_paused_failed:
+            asset.status = AssetStatus.UpstreamStopped
+            logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent paused or failed)")
+            return
+
+        timestamp = asset.timestamp()
+        if timestamp == AssetStatus.Unavailable:
+            asset.status = AssetStatus.Unavailable
+            logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp unavailable)")
+            return
+
+        if any_stale_unav:
+            asset.status = AssetStatus.Stale
+            logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent stale/unavailable)")
+            return
+
+        #check for unavailable; if so, since any_stale_unav = False, this is a root node with no parent, so move on
+        if (latest_parent_timestamp != AssetStatus.Unavailable) and (timestamp < latest_parent_timestamp):
+            asset.status = AssetStatus.Stale
+            logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp older than parent)")
+            return
+
+        asset.status = AssetStatus.Current
+        logger.info(f"Asset {asset} status: {fmt(asset.status)}")
+
+    def _build_asset(self, asset):
+        parent_status_cts = Counter([p.status for p in self.graph.predecessors(asset)])
+        logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {(' '.join([str(item[0]) +': ' + str(item[1]) + ',' for item in list(parent_status_cts.items())]))[:-1]}")
+        if (asset.status == AssetStatus.Unavailable or asset.status == AssetStatus.Stale) and all(p.status == AssetStatus.Current for p in self.graph.predecessors(asset)):
+            logger.info(f"Asset {asset} is {fmt(asset.status)} and all parents are current; rebuilding")
+            # set building status
+            asset.status = AssetStatus.Building
+            asset._last_build_timestamp = plm.now()
+
+            # run the build
+            try:
+                logger.debug(f"Building {asset}")
+                asset.build()
+            except Exception as e:
+                asset.status = AssetStatus.Failed
+                asset.message = "Build failed: exception during build"
+                logger.exception(f"Asset {asset} build failed (status: {asset.status}): error in-build")
+                return
+
+            # refresh the timestamp cache
+            ts = asset.timestamp()
+            logger.debug(f"New asset {asset} timestamp: {ts}")
+
+            # get latest parent timestamp
+            parents = list(self.graph.predecessors(asset))
+            if len(parents) == 0:
+                logger.debug(f"Latest parent asset timestamp: (no parents)")
+            else:
+                latest_parent_timestamp = max([p.timestamp() for p in parents])
+                logger.debug(f"Latest parent asset timestamp: {latest_parent_timestamp}")
+                if ts < latest_parent_timestamp:
+                    raise RuntimeError("Rebuilt asset has timestamp earlier than latest parent!")
+
+            # make sure asset is now available and has a new timestamp
+            if ts is AssetStatus.Unavailable:
+                asset.status = AssetStatus.Failed
+                asset.message = "Build failed: asset unavailable"
+                logger.error(f"Asset {asset} build failed (status: {asset.status}): asset unavailable after build")
+                return
+
+            # ensure that it now has a newer timestamp than parents
+            if not all(p.timestamp() < asset.timestamp() for p in self.graph.predecessors(asset)):
+                asset.status = AssetStatus.Failed
+                asset.message = "Build failed: asset timestamp older than parents"
+                logger.error(f"Asset {asset} build failed (status: {asset.status}): asset timestamp older than parents")
+                return
+
+            # update to current status
+            asset.status = AssetStatus.Current
+            asset.message = "Build complete"
+            logger.info(f"Asset {asset} build completed successfully (status: {fmt(asset.status)})")
+        else:
+            logger.debug(f"Asset {asset} not ready to rebuild.")
 
     def _collect_groups(self):
         logger.debug("Collecting node (sub)groups")
