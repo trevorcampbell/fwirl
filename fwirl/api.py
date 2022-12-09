@@ -4,7 +4,7 @@ import pendulum as plm
 __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 
 def _get_exch_queue(graph_key):
-    exch = Exchange('sentry', 'direct', durable=False)
+    exch = Exchange('fwirl', 'direct', durable=False)
     queue = Queue(graph_key, exchange=exch, routing_key=graph_key, message_ttl = 1., auto_delete=True)
     return exch, queue
 

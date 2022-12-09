@@ -4,7 +4,7 @@ import fwirl
 #fwirl.summarize("test_graph")
 
 
-fwirl.ls("test_graph", True, False)
+fwirl.ls("test_graph", False, True)
 
 
 #fwirl.ls("test_graph", False, True)

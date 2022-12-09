@@ -1,6 +1,6 @@
 import networkx as nx
 from loguru import logger
-from .asset import Asset, AssetStatus, _UnusedAsset
+from .asset import Asset, AssetStatus
 import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 from collections.abc import Iterable
@@ -171,7 +171,7 @@ class AssetGraph:
                 self.pause_asset(asset)
             if body["key"] in self.schedules:
                 self.pause_schedule(body["key"])
-            
+
         if body["type"] == "unpause":
             asset = None
             for _asset in self.graph:
@@ -196,8 +196,8 @@ class AssetGraph:
 
     def run(self):
         # run the message handling loop
-        logger.info(f"Beginning sentry main loop")
-        exchange = Exchange('sentry', 'direct', durable = False)
+        logger.info(f"Beginning fwirl main loop")
+        exchange = Exchange('fwirl', 'direct', durable = False)
         queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
         with Connection(__RABBIT_URL__) as conn:
             with conn.Consumer(queue, callbacks=[self.on_message]):
@@ -334,7 +334,7 @@ class AssetGraph:
         if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
             return
-  
+
         if asset.status == AssetStatus.Paused:
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (paused asset)")
             return

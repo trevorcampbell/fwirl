@@ -46,7 +46,6 @@ class Asset:
 
     @abstractmethod
     def build(self):
-        # if returns an object, gets serialized and stored in db
         pass
 
 # Assets for which we can only obtain a value (no notion of a timestamp)
@@ -69,7 +68,7 @@ class ExternalAsset(Asset):
             self.last_poll = plm.now()
             if diff(val, self._cached_val):
                 self._cached_val = val
-                return plm.now()
+                self._cached_timestamp = plm.now()
         return self._cached_timestamp
 
     def build(self):
@@ -83,14 +82,3 @@ class ExternalAsset(Asset):
     def diff(self, val1, val2):
         pass
 
-# This asset is just used internally for doing graph searches by key
-class _UnusedAsset(Asset):
-    def __init__(self, key):
-        super(_UnusedAsset,self).__init__(key, [])
-        self.status = "__UNUSED_ASSET_NO_STATUS__" #just to flag that this node is not to be used as an actual asset, just for graph lookup
-
-    def timestamp(self):
-        pass
-
-    def build(self):
-        pass

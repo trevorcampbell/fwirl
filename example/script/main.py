@@ -25,7 +25,7 @@ class UnreliableAsset(fwirl.Asset):
         # with P = 0.3, the asset build fails before creation
         # with P = 0.3, the asset build fails after creation
         r = random.random()
-        if r > 0.001:
+        if r > 0.01:
             self._built = True
             self._ts = plm.now()
         #elif r <= 0.7:
