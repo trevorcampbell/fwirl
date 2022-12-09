@@ -439,12 +439,16 @@ class AssetGraph:
     def _collect_groups(self):
         logger.debug("Collecting node (sub)groups")
         groupings = defaultdict(list)
+        # ensure __singletons__ group exists
+        groupings['__singletons__'] = []
         for asset in self.graph:
             if asset.group == '__singletons__' or asset.subgroup == '__singletons__':
                 raise ValueError('(Sub)group name used reserved keyword __singletons__')
             if asset.group is not None:
                 if asset.group not in groupings:
                     groupings[asset.group] = defaultdict(list)
+                    # ensure __singletons__ subgroup  exists
+                    groupings[asset.group]['__singletons__'] = []
                 if asset.subgroup is not None:
                     groupings[asset.group][asset.subgroup].append(asset)
                 else:
