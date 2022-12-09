@@ -33,34 +33,34 @@ cli.add_command(ls)
 
 @click.command()
 @click.argument("graph")
+@click.option("--asset", default=None)
 @click.option("--rabbit_url", default=__RABBIT_URL__)
-def refresh(graph, rabbit_url):
-    api_refresh(graph, rabbit_url)
+def refresh(graph, asset, rabbit_url):
+    api_refresh(graph, asset, rabbit_url)
 cli.add_command(refresh)
 
 @click.command()
 @click.argument("graph")
+@click.option("--asset", default=None)
 @click.option("--rabbit_url", default=__RABBIT_URL__)
-def build(graph, rabbit_url):
-    api_build(graph, rabbit_url)
+def build(graph, asset, rabbit_url):
+    api_build(graph, asset, rabbit_url)
 cli.add_command(build)
 
 @click.command()
 @click.argument("graph")
-@click.option("--asset", default=None)
-@click.option("--schedule", default=None)
+@click.argument("key")
 @click.option("--rabbit_url", default=__RABBIT_URL__)
-def pause(graph, asset, schedule, rabbit_url):
-    api_pause(graph, asset, schedule, rabbit_url)
+def pause(graph, key, rabbit_url):
+    api_pause(graph, key, rabbit_url)
 cli.add_command(pause)
 
 @click.command()
 @click.argument("graph")
-@click.option("--asset", default=None)
-@click.option("--schedule", default=None)
+@click.argument("key")
 @click.option("--rabbit_url", default=__RABBIT_URL__)
-def unpause(graph, asset, schedule, rabbit_url):
-    api_unpause(graph, asset, schedule, rabbit_url)
+def unpause(graph, key, rabbit_url):
+    api_unpause(graph, key, rabbit_url)
 cli.add_command(pause)
 
 

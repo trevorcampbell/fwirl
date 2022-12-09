@@ -112,10 +112,22 @@ class AssetGraph:
         self.schedules.pop(schedule_key, None)
 
     def pause_schedule(self, schedule_key):
+        logger.info(f"Pausing schedule '{schedule_key}'")
         self.schedules[schedule_key].pause()
 
+    def pause_asset(self, asset):
+        logger.info(f"Pausing asset {asset}")
+        asset.status = AssetStatus.Paused
+        self.refresh_downstream(asset)
+
     def unpause_schedule(self, schedule_key):
+        logger.info(f"Resuming schedule '{schedule_key}'")
         self.schedules[schedule_key].unpause()
+
+    def unpause_asset(self, asset):
+        logger.info(f"Unpausing asset {asset}")
+        asset.status = AssetStatus.Stale
+        self.refresh_downstream(asset)
 
     def on_message(self, body, message):
         logger.info(f"Received {body['type']} command")
@@ -131,21 +143,46 @@ class AssetGraph:
                 self.list_schedules()
 
         if body["type"] == "build":
-            pass #TODO build
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == body["asset_key"]:
+                    asset = _asset
+            if asset is not None:
+                self.build_upstream(asset)
+            else:
+                self.build()
 
         if body["type"] == "refresh":
-            pass #TODO refresh
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == body["asset_key"]:
+                    asset = _asset
+            if asset is not None:
+                self.refresh_downstream(asset)
+            else:
+                self.refresh()
 
         if body["type"] == "pause":
-            pass #TODO refresh
-
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == body["key"]:
+                    asset = _asset
+            if asset is not None:
+                self.pause_asset(asset)
+            if body["key"] in self.schedules:
+                self.pause_schedule(body["key"])
+            
         if body["type"] == "unpause":
-            pass #TODO refresh
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == body["key"]:
+                    asset = _asset
+            if asset is not None:
+                self.unpause_asset(asset)
+            if body["key"] in self.schedules:
+                self.unpause_schedule(body["key"])
 
         if body["type"] == "schedule":
-            # we have to loop over keys in the graph, since our keys are objects
-            # and surprisingly i couldn't find a dict.get() method that returns a (key,val) tuple
-            # (since here we want the key, not the val)
             asset = None
             for _asset in self.graph:
                 if _asset.key == body["asset_key"]:
@@ -186,7 +223,6 @@ class AssetGraph:
                     except TimeoutError:
                         # do something with next_sk
                         logger.info(f"Running scheduled event {next_sk}")
-                        #self.build_upstream(self.schedules[next_sk].asset)
                         # TODO run the event
 
     def _initialize_resources(self, resources):
@@ -212,9 +248,23 @@ class AssetGraph:
                 logger.exception(f"Resource {resource} cleanup failed; attempting to clean up other resources")
 
     def refresh(self):
-        logger.info(f"Running status refresh & propagation on asset graph")
+        logger.info(f"Refreshing all assets")
         sorted_nodes = list(nx.topological_sort(self.graph))
+        self._refresh(sorted_nodes)
 
+    def refresh_downstream(self, asset_or_assets):
+        logger.info(f"Refreshing assets downstream of (and including) {asset_or_assets}")
+        if isinstance(asset_or_assets, Asset):
+            asset_or_assets = [asset_or_assets]
+        nodes_to_refresh = []
+        for asset in asset_or_assets:
+            nodes_to_refresh.append(asset)
+            nodes_to_refresh.extend(nx.descendants(self.graph, asset))
+        sg = self.graph.subgraph(nodes_to_refresh)
+        sorted_nodes = list(nx.topological_sort(sg))
+        self._refresh(sorted_nodes)
+
+    def _refresh(self, sorted_nodes):
         required_resources = set()
         for asset in sorted_nodes:
             required_resources.update(asset.resources)
@@ -245,9 +295,6 @@ class AssetGraph:
         self._build(sorted_nodes)
 
     def _build(self, sorted_nodes):
-        # Builds only happen for Unavailable and Stale assets whose parents are all Current
-
-        # collect and initialize required resources
         required_resources = set()
         for asset in sorted_nodes:
             required_resources.update(asset.resources)
@@ -262,17 +309,24 @@ class AssetGraph:
         self._cleanup_resources(required_resources)
 
     def _refresh_asset(self, asset):
-        # Status propagates using the following cascade of rules:
+        # Status refresh propagates using the following cascade of rules:
         # 0. If I'm Failed and self.allow_retry = False, I'm Failed
+        # 0. If I'm Paused, I'm Paused
         # 1. If any of my parents is Paused or UpstreamStopped or Failed, I'm UpstreamStopped.
         # 2. If I don't exist, I'm Unavailable.
         # 3. If any of my parents is Stale or Unavailable, I'm Stale
         # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
         # 5. I'm Current
         logger.debug(f"Updating status for asset {asset}")
+
         if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
             return
+  
+       if asset.status == AssetStatus.Paused:
+            logger.info(f"Asset {asset} status: {fmt(asset.status)} (paused asset)")
+            return
+
         any_paused_failed = False
         any_stale_unav = False
         latest_parent_timestamp = AssetStatus.Unavailable
