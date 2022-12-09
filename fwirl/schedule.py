@@ -1,7 +1,8 @@
 from crontab import CronTab
 
 class Schedule:
-    def __init__(self, cron_string, asset):
+    def __init__(self, action, cron_string, asset):
+        self.action = action
         self.cron = CronTab(cron_string)
         self.cron_string = cron_string
         self.asset = asset

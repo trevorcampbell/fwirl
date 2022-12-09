@@ -95,15 +95,15 @@ class AssetGraph:
                 s += f"- {sch}: {self.schedules[sch]}"
             logger.info(s)
 
-    def schedule(self, schedule_key, cron_string, asset = None):
+    def schedule(self, schedule_key, action, cron_string, asset = None):
         logger.info(f"Adding new schedule with key {schedule_key}")
         if schedule_key in self.schedules:
             logger.error(f"Tried to add schedule key {schedule_key}, but it already exists. Skipping.")
             return
         # find asset corresponding to asset_key
-        jobstr = "build all" if asset is None else f"build upstream of {asset}"
+        jobstr = f"{action} all" if asset is None else f"{action} {asset}"
         logger.info(f"Adding scheduled run '{schedule_key}' ({jobstr} at '{cron_string}') to graph {self.key}")
-        self.schedules[schedule_key] = Schedule(cron_string, asset)
+        self.schedules[schedule_key] = Schedule(action, cron_string, asset)
 
     def unschedule(self, schedule_key):
         logger.info(f"Removing scheduled run '{schedule_key}'")
@@ -212,9 +212,9 @@ class AssetGraph:
                                 min_wait = wait
                                 next_sk = sk
                     if min_wait is None:
-                        logger.info(f"Waiting on message queue (no scheduled runs)")
+                        logger.info(f"Waiting on message queue (no currently scheduled runs)")
                     else:
-                        logger.info(f"Waiting on message queue and next run of {next_sk} ({self.schedules[next_sk]}) at {plm.now() + plm.duration(seconds=min_wait)}")
+                        logger.info(f"Waiting on message queue or next run of {next_sk} ({self.schedules[next_sk]}) at {plm.now() + plm.duration(seconds=min_wait)}")
                     try:
                         conn.drain_events(timeout = min_wait)
                     except KeyboardInterrupt:
@@ -223,7 +223,19 @@ class AssetGraph:
                     except TimeoutError:
                         # do something with next_sk
                         logger.info(f"Running scheduled event {next_sk}")
-                        # TODO run the event
+                        sch = self.schedules[next_sk]
+                        if sch.action == "build":
+                            if sch.asset is None:
+                                self.build()
+                            else:
+                                self.build_upstream(sch.asset)
+                        elif sch.action == "refresh":
+                            if sch.asset is None:
+                                self.refresh()
+                            else:
+                                self.refresh_downstream(sch.asset)
+                        else:
+                            raise ValueError(f"Action {sch.action} in schedule {next_sk} not recognized.")
 
     def _initialize_resources(self, resources):
         logger.info(f"Initializing {len(resources)} build resources")

@@ -45,11 +45,11 @@ def unpause(graph_key, key=None, rabbit_url = __RABBIT_URL__):
         producer = conn.Producer()
         producer.publish({"type": "unpause", "key" : key}, exchange=exch, routing_key = graph_key, declare=[queue])
 
-def schedule(graph_key, schedule_key, cron_str, asset_key=None, rabbit_url = __RABBIT_URL__):
+def schedule(graph_key, schedule_key, action, cron_str, asset_key=None, rabbit_url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(graph_key)
     with Connection(rabbit_url) as conn:
         producer = conn.Producer()
-        producer.publish({"type": "schedule", "schedule_key" : schedule_key, "cron_str" : cron_str, "asset_key" : asset_key}, exchange=exch, routing_key = graph_key, declare=[queue])
+        producer.publish({"type": "schedule", "schedule_key" : schedule_key, "action" : action, "cron_str" : cron_str, "asset_key" : asset_key}, exchange=exch, routing_key = graph_key, declare=[queue])
 
 def unschedule(graph_key, schedule_key, rabbit_url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(graph_key)
