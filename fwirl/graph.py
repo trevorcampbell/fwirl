@@ -187,7 +187,7 @@ class AssetGraph:
             for _asset in self.graph:
                 if _asset.key == body["asset_key"]:
                     asset = _asset
-            self.schedule(body["schedule_key"], body["cron_str"], asset)
+            self.schedule(body["schedule_key"], body["action"], body["cron_str"], asset)
 
         if body["type"] == "unschedule":
             self.unschedule(body["schedule_key"])
@@ -335,7 +335,7 @@ class AssetGraph:
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (previous failure and asset does not allow retries)")
             return
   
-       if asset.status == AssetStatus.Paused:
+        if asset.status == AssetStatus.Paused:
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (paused asset)")
             return
 

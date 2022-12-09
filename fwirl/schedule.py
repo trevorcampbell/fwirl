@@ -21,4 +21,4 @@ class Schedule:
         return self.paused
 
     def __repr__(self):
-        return self.__class__.__name__ + f"('{self.cron_string}', Paused={self.paused}, Asset={self.asset})"
+        return self.__class__.__name__ + f"({self.action}, '{self.cron_string}', Paused={self.paused}, Asset={self.asset})"
