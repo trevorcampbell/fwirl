@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 import pendulum as plm
-#import notifiers
+from notifiers.logging import NotificationHandler
 from kombu import Connection, Exchange, Queue
 from .schedule import Schedule
 
@@ -37,10 +37,13 @@ def fmt(status):
     return f"\033[{_LOGURU_COLORS[status]}m{status}\033[00m\u001b[1m"
 
 class AssetGraph:
-    def __init__(self, key):
+    def __init__(self, key, notifiers = None):
         self.graph = nx.DiGraph()
         self.key = key
         self.schedules = {}
+        for service in notifiers:
+            handler = NotificationHandler(service, defaults=notifiers[service]["params"])
+            logger.add(handler, level=notifiers[service]["level"])
 
     def add_assets(self, assets):
         logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")
@@ -314,11 +317,21 @@ class AssetGraph:
             return
 
         # loop over assets and build
+        all_successful = True
         for asset in sorted_nodes:
             self._refresh_asset(asset)
-            self._build_asset(asset)
+            build_result_flag = self._build_asset(asset)
+            all_successful = all_successful and build_result_flag
 
         self._cleanup_resources(required_resources)
+
+        summary = self.summarize(display=False)
+        if not all_successful:
+            logger.info(f"Build failure occurred")
+            logger.error(summary, colorize=True)
+        else:
+            logger.info(f"Build successful")
+            logger.info(summary, colorize=True)
 
     def _refresh_asset(self, asset):
         # Status refresh propagates using the following cascade of rules:
@@ -399,7 +412,7 @@ class AssetGraph:
                 asset.status = AssetStatus.Failed
                 asset.message = "Build failed: exception during build"
                 logger.exception(f"Asset {asset} build failed (status: {asset.status}): error in-build")
-                return
+                return False
 
             # refresh the timestamp cache
             ts = asset.timestamp()
@@ -420,14 +433,14 @@ class AssetGraph:
                 asset.status = AssetStatus.Failed
                 asset.message = "Build failed: asset unavailable"
                 logger.error(f"Asset {asset} build failed (status: {asset.status}): asset unavailable after build")
-                return
+                return False
 
             # ensure that it now has a newer timestamp than parents
             if not all(p.timestamp() < asset.timestamp() for p in self.graph.predecessors(asset)):
                 asset.status = AssetStatus.Failed
                 asset.message = "Build failed: asset timestamp older than parents"
                 logger.error(f"Asset {asset} build failed (status: {asset.status}): asset timestamp older than parents")
-                return
+                return False
 
             # update to current status
             asset.status = AssetStatus.Current
@@ -435,6 +448,8 @@ class AssetGraph:
             logger.info(f"Asset {asset} build completed successfully (status: {fmt(asset.status)})")
         else:
             logger.debug(f"Asset {asset} not ready to rebuild.")
+
+        return True
 
     def _collect_groups(self):
         logger.debug("Collecting node (sub)groups")
@@ -467,7 +482,7 @@ class AssetGraph:
                 groupings[gr][sb] = list(nx.topological_sort(sg))
         return groupings
 
-    def summarize(self):
+    def summarize(self, display=True):
         groupings = self._collect_groups()
         summary = f"\nAsset Graph Summary\n-------------------\nAssets: {self.graph.number_of_nodes()}\n"
         for status in AssetStatus:
@@ -512,7 +527,9 @@ class AssetGraph:
                     summary += f"        Subgroup {sb}:\n"
                     for asset in groupings[gr][sb]:
                         summary += f"            {asset} : {fmt(asset.status)}\n"
-        logger.info(summary, colorize=True)
+        if display:
+            logger.info(summary, colorize=True)
+        return summary
 
 
     # TODO visualization (this code works but has old viznodes in it
