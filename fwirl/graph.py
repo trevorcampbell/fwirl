@@ -1,7 +1,7 @@
 import networkx as nx
 from loguru import logger
 from .asset import Asset, AssetStatus
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 import pendulum as plm
