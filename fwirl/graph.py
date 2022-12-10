@@ -272,7 +272,7 @@ class AssetGraph:
     def refresh(self):
         logger.info(f"Refreshing all assets")
         sorted_nodes = list(nx.topological_sort(self.graph))
-        self._refresh(sorted_nodes)
+        asyncio.run(self._refresh(sorted_nodes))
 
     def refresh_downstream(self, asset_or_assets):
         logger.info(f"Refreshing assets downstream of (and including) {asset_or_assets}")
@@ -284,9 +284,9 @@ class AssetGraph:
             nodes_to_refresh.extend(nx.descendants(self.graph, asset))
         sg = self.graph.subgraph(nodes_to_refresh)
         sorted_nodes = list(nx.topological_sort(sg))
-        self._refresh(sorted_nodes)
+        asyncio.run(self._refresh(sorted_nodes))
 
-    def _refresh(self, sorted_nodes):
+    async def _refresh(self, sorted_nodes):
         required_resources = set()
         for asset in sorted_nodes:
             required_resources.update(asset.resources)
@@ -308,7 +308,7 @@ class AssetGraph:
     def build(self):
         logger.info(f"Building all assets")
         sorted_nodes = list(nx.topological_sort(self.graph))
-        self._build(sorted_nodes)
+        asyncio.run(self._build(sorted_nodes))
 
     def build_upstream(self, asset_or_assets):
         logger.info(f"Building assets upstream of (and including) {asset_or_assets}")
@@ -320,7 +320,7 @@ class AssetGraph:
             nodes_to_build.extend(nx.ancestors(self.graph, asset))
         sg = self.graph.subgraph(nodes_to_build)
         sorted_nodes = list(nx.topological_sort(sg))
-        self._build(sorted_nodes)
+        asyncio.run(self._build(sorted_nodes))
 
     def _build(self, sorted_nodes):
         required_resources = set()
