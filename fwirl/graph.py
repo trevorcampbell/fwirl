@@ -294,8 +294,6 @@ class AssetGraph:
         if not self._initialize_resources(required_resources):
             return
 
-        
-
         task_map = {}
         for asset in sorted_nodes:
             coroutine = self._refresh_asset(asset)
