@@ -8,6 +8,7 @@ import pendulum as plm
 from notifiers.logging import NotificationHandler
 from kombu import Connection, Exchange, Queue
 from .schedule import Schedule
+import asyncio
 
 __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 __MESSAGE_TTL__ = 1
@@ -35,6 +36,12 @@ _LOGURU_COLORS = {AssetStatus.Current : "32",
 def fmt(status):
     #return f"<{_LOGURU_COLORS[status]}>{status}</>"
     return f"\033[{_LOGURU_COLORS[status]}m{status}\033[00m\u001b[1m"
+
+async def wait_for_dependencies(task, parents):
+    for parent in parents:
+        await parent
+    result = await task
+    return result
 
 class AssetGraph:
     def __init__(self, key, notifiers = None):
@@ -286,8 +293,14 @@ class AssetGraph:
         if not self._initialize_resources(required_resources):
             return
 
+        task_map = {}
         for asset in sorted_nodes:
-            self._refresh_asset(asset)
+            coroutine = self._refresh_asset(asset)
+            task = asyncio.create_task(wait_for_dependencies(coroutine, [task_map[a] for a in self.graph.predecessors(asset)]))
+            task_map[asset] = task
+
+        for asset in sorted_nodes:
+            await task_map[asset]
 
         self._cleanup_resources(required_resources)
         return
@@ -316,11 +329,18 @@ class AssetGraph:
         if not self._initialize_resources(required_resources):
             return
 
-        # loop over assets and build
+        # loop over assets, refresh and build
+        task_map = {}
+        for asset in sorted_nodes:
+            coroutine = self._refresh_asset(asset)
+            _task = asyncio.create_task(wait_for_dependencies(coroutine, [task_map[a] for a in self.graph.predecessors(asset)]))
+            coroutine = self._build_asset(asset)
+            task = asyncio.create_task(wait_for_dependencies(coroutine, [_task]))
+            task_map[asset] = task
+
         all_successful = True
         for asset in sorted_nodes:
-            self._refresh_asset(asset)
-            build_result_flag = self._build_asset(asset)
+            build_result_flag = await task_map[asset]
             all_successful = all_successful and build_result_flag
 
         self._cleanup_resources(required_resources)
@@ -333,7 +353,7 @@ class AssetGraph:
             logger.info(f"Build successful")
             logger.info(summary, colorize=True)
 
-    def _refresh_asset(self, asset):
+    async def _refresh_asset(self, asset):
         # Status refresh propagates using the following cascade of rules:
         # 0. If I'm Failed and self.allow_retry = False, I'm Failed
         # 0. If I'm Paused, I'm Paused
@@ -363,7 +383,7 @@ class AssetGraph:
                 any_stale_unav = True
             # don't try to compute timestamps if any parent is paused, since they may not exist (and have no cached ts)
             if parent.status != AssetStatus.Unavailable and (not any_paused_failed):
-                ts = parent.timestamp()
+                ts = await parent.timestamp()
                 if latest_parent_timestamp == AssetStatus.Unavailable:
                     latest_parent_timestamp = ts
                 else:
@@ -375,7 +395,7 @@ class AssetGraph:
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent paused or failed)")
             return
 
-        timestamp = asset.timestamp()
+        timestamp = await asset.timestamp()
         if timestamp == AssetStatus.Unavailable:
             asset.status = AssetStatus.Unavailable
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp unavailable)")
@@ -395,7 +415,7 @@ class AssetGraph:
         asset.status = AssetStatus.Current
         logger.info(f"Asset {asset} status: {fmt(asset.status)}")
 
-    def _build_asset(self, asset):
+    async def _build_asset(self, asset):
         parent_status_cts = Counter([p.status for p in self.graph.predecessors(asset)])
         logger.debug(f"Checking asset {asset} with status {asset.status} and parent statuses {(' '.join([str(item[0]) +': ' + str(item[1]) + ',' for item in list(parent_status_cts.items())]))[:-1]}")
         if (asset.status == AssetStatus.Unavailable or asset.status == AssetStatus.Stale) and all(p.status == AssetStatus.Current for p in self.graph.predecessors(asset)):
@@ -407,7 +427,7 @@ class AssetGraph:
             # run the build
             try:
                 logger.debug(f"Building {asset}")
-                asset.build()
+                await asset.build()
             except Exception as e:
                 asset.status = AssetStatus.Failed
                 asset.message = "Build failed: exception during build"
@@ -415,15 +435,16 @@ class AssetGraph:
                 return False
 
             # refresh the timestamp cache
-            ts = asset.timestamp()
+            ts = await asset.timestamp()
             logger.debug(f"New asset {asset} timestamp: {ts}")
 
             # get latest parent timestamp
             parents = list(self.graph.predecessors(asset))
+            parent_timestamps = [(await p.timestamp()) for p in parents]
             if len(parents) == 0:
                 logger.debug(f"Latest parent asset timestamp: (no parents)")
             else:
-                latest_parent_timestamp = max([p.timestamp() for p in parents])
+                latest_parent_timestamp = max(parent_timestamps)
                 logger.debug(f"Latest parent asset timestamp: {latest_parent_timestamp}")
                 if ts < latest_parent_timestamp:
                     raise RuntimeError("Rebuilt asset has timestamp earlier than latest parent!")
@@ -436,7 +457,7 @@ class AssetGraph:
                 return False
 
             # ensure that it now has a newer timestamp than parents
-            if not all(p.timestamp() < asset.timestamp() for p in self.graph.predecessors(asset)):
+            if not all(pt < ts for pt in parent_timestamps):
                 asset.status = AssetStatus.Failed
                 asset.message = "Build failed: asset timestamp older than parents"
                 logger.error(f"Asset {asset} build failed (status: {asset.status}): asset timestamp older than parents")
