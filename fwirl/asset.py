@@ -39,13 +39,13 @@ class Asset:
         return self.key
 
     @abstractmethod
-    def timestamp(self):
+    async def timestamp(self):
         # return timestamp if exists
         # return AssetStatus.Unavailable if not
         pass
 
     @abstractmethod
-    def build(self):
+    async def build(self):
         pass
 
 # Assets for which we can only obtain a value (no notion of a timestamp)
@@ -62,23 +62,24 @@ class ExternalAsset(Asset):
     # TODO also add a put method and allow this program to update the external resource
     # TODO self.get error handling?
     # TODO store val/timestamp in a DB to record last poll/val to avoid rerunning flows unnecessarily if this program quits
-    def timestamp(self):
+    async def timestamp(self):
         if (self.last_poll == AssetStatus.Unavailable) or (plm.now() >= self.last_poll + min_polling_interval):
             val = self.get()
             self.last_poll = plm.now()
-            if diff(val, self._cached_val):
+            if self.diff(val):
                 self._cached_val = val
                 self._cached_timestamp = plm.now()
         return self._cached_timestamp
 
-    def build(self):
+    async def build(self):
         pass
 
     @abstractmethod
-    def get(self):
+    async def get(self):
         pass
 
     @abstractmethod
-    def diff(self, val1, val2):
+    def diff(self, val):
+        # compare to self._cached_val
         pass
 
