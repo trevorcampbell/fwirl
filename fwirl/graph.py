@@ -48,9 +48,10 @@ class AssetGraph:
         self.graph = nx.DiGraph()
         self.key = key
         self.schedules = {}
-        for service in notifiers:
-            handler = NotificationHandler(service, defaults=notifiers[service]["params"])
-            logger.add(handler, level=notifiers[service]["level"])
+        if notifiers is not None:
+            for service in notifiers:
+                handler = NotificationHandler(service, defaults=notifiers[service]["params"])
+                logger.add(handler, level=notifiers[service]["level"])
 
     def add_assets(self, assets):
         logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")
@@ -293,6 +294,8 @@ class AssetGraph:
         if not self._initialize_resources(required_resources):
             return
 
+        
+
         task_map = {}
         for asset in sorted_nodes:
             coroutine = self._refresh_asset(asset)
@@ -322,7 +325,7 @@ class AssetGraph:
         sorted_nodes = list(nx.topological_sort(sg))
         asyncio.run(self._build(sorted_nodes))
 
-    def _build(self, sorted_nodes):
+    async def _build(self, sorted_nodes):
         required_resources = set()
         for asset in sorted_nodes:
             required_resources.update(asset.resources)
@@ -376,7 +379,7 @@ class AssetGraph:
         any_stale_unav = False
         latest_parent_timestamp = AssetStatus.Unavailable
         for parent in self.graph.predecessors(asset):
-            logger.debug(f"Checking parent {parent} with status {parent.status} and timestamp {parent.timestamp()}")
+            logger.debug(f"Checking parent {parent} with status {parent.status} and timestamp {await parent.timestamp()}")
             if parent.status == AssetStatus.Paused or parent.status == AssetStatus.UpstreamStopped or parent.status == AssetStatus.Failed:
                 any_paused_failed = True
             if parent.status == AssetStatus.Stale or parent.status == AssetStatus.Unavailable:
