@@ -218,31 +218,30 @@ class AssetGraph:
         queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
         with Connection(__RABBIT_URL__) as conn:
             with conn.Consumer(queue, callbacks=[self.on_message]):
-                # TODO create an empty priority queue (by datetime) of schedules
+                # create an empty queue of schedules
+                schedule_queue = []
                 while True:
-                    # TODO fill in queue with any schedules that aren't there (datetime = plmnow + duration(Seconds))
-                    # TODO wait on front of queue
-
-                    # get next earliest event from the schedules
-                    min_wait = None
-                    next_sk = None
+                    # remove paused schedules
+                    schedule_queue = filter(lambda s: not self.schedules[s[1]].is_paused(), schedule_queue)
+                    # add schedules to queue
                     for sk in self.schedules:
-                        if not self.schedules[sk].is_paused():
-                            wait = self.schedules[sk].next()
-                            if min_wait is None or min_wait > wait:
-                                min_wait = wait
-                                next_sk = sk
-                    if min_wait is None:
-                        logger.info(f"Waiting on message queue (no currently scheduled runs)")
-                    else:
-                        logger.info(f"Waiting on message queue or next run of {next_sk} ({self.schedules[next_sk]}) at {plm.now() + plm.duration(seconds=min_wait)}")
+                        if (sk not in [s[1] for s in schedule_queue]) and (not self.schedules[sk].is_paused()):
+                            schedule_queue.put((plm.now() + plm.duration(seconds = self.schedules[sk].next()), sk))
+                    # sort queue based on event time
+                    schedule_queue.sort(key = lambda s: s[0])
                     try:
-                        conn.drain_events(timeout = min_wait)
+                        # get next event
+                        if len(schedule_queue) == 0:
+                            logger.info(f"Waiting on message queue (no currently scheduled runs)")
+                            conn.drain_events()
+                        else:
+                            next_time, next_sk = schedule_queue.pop(0)
+                            logger.info(f"Waiting on message queue or next run of {next_sk} ({self.schedules[next_sk]}) at {next_time}")
+                            conn.drain_events(timeout = (next_time - plm.now()).seconds)
                     except KeyboardInterrupt:
                         logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
                         break
                     except TimeoutError:
-                        # TODO pop front of queue
                         # do something with next_sk
                         logger.info(f"Running scheduled event {next_sk}")
                         sch = self.schedules[next_sk]
