@@ -218,7 +218,11 @@ class AssetGraph:
         queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
         with Connection(__RABBIT_URL__) as conn:
             with conn.Consumer(queue, callbacks=[self.on_message]):
+                # TODO create an empty priority queue (by datetime) of schedules
                 while True:
+                    # TODO fill in queue with any schedules that aren't there (datetime = plmnow + duration(Seconds))
+                    # TODO wait on front of queue
+
                     # get next earliest event from the schedules
                     min_wait = None
                     next_sk = None
@@ -238,6 +242,7 @@ class AssetGraph:
                         logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
                         break
                     except TimeoutError:
+                        # TODO pop front of queue
                         # do something with next_sk
                         logger.info(f"Running scheduled event {next_sk}")
                         sch = self.schedules[next_sk]
@@ -253,6 +258,8 @@ class AssetGraph:
                                 self.refresh_downstream(sch.asset)
                         else:
                             raise ValueError(f"Action {sch.action} in schedule {next_sk} not recognized.")
+                         
+                        
 
     def _initialize_resources(self, resources):
         logger.info(f"Initializing {len(resources)} build resources")
