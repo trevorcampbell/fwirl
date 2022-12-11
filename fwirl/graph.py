@@ -236,6 +236,11 @@ class AssetGraph:
                             conn.drain_events()
                         else:
                             next_time, next_sk = schedule_queue.pop(0)
+                            # if event is late, run it now
+                            if next_time < plm.now():
+                                logger.info(f"Scheduled event {next_sk} ({self.schedules[next_sk]}) at {next_time} is late; running now")
+                                raise TimeoutError
+                            # otherwise, wait on message loop and next event
                             logger.info(f"Waiting on message queue or next run of {next_sk} ({self.schedules[next_sk]}) at {next_time}")
                             conn.drain_events(timeout = (next_time - plm.now()).seconds)
                     except KeyboardInterrupt:
@@ -257,7 +262,6 @@ class AssetGraph:
                                 self.refresh_downstream(sch.asset)
                         else:
                             raise ValueError(f"Action {sch.action} in schedule {next_sk} not recognized.")
-                         
                         
 
     def _initialize_resources(self, resources):
