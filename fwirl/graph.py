@@ -9,6 +9,12 @@ from notifiers.logging import NotificationHandler
 from kombu import Connection, Exchange, Queue
 from .schedule import Schedule
 import asyncio
+from enum import Enum
+
+class BuildResult(Enum):
+    Rebuilt = 0
+    Skipped = 1
+    Failed = 2
 
 __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 __MESSAGE_TTL__ = 1
@@ -212,22 +218,31 @@ class AssetGraph:
         queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
         with Connection(__RABBIT_URL__) as conn:
             with conn.Consumer(queue, callbacks=[self.on_message]):
+                # create an empty queue of schedules
+                schedule_queue = []
                 while True:
-                    # get next earliest event from the schedules
-                    min_wait = None
-                    next_sk = None
+                    # remove paused schedules
+                    schedule_queue = filter(lambda s: not self.schedules[s[1]].is_paused(), schedule_queue)
+                    # add schedules to queue
                     for sk in self.schedules:
-                        if not self.schedules[sk].is_paused():
-                            wait = self.schedules[sk].next()
-                            if min_wait is None or min_wait > wait:
-                                min_wait = wait
-                                next_sk = sk
-                    if min_wait is None:
-                        logger.info(f"Waiting on message queue (no currently scheduled runs)")
-                    else:
-                        logger.info(f"Waiting on message queue or next run of {next_sk} ({self.schedules[next_sk]}) at {plm.now() + plm.duration(seconds=min_wait)}")
+                        if (sk not in [s[1] for s in schedule_queue]) and (not self.schedules[sk].is_paused()):
+                            schedule_queue.put((plm.now() + plm.duration(seconds = self.schedules[sk].next()), sk))
+                    # sort queue based on event time
+                    schedule_queue.sort(key = lambda s: s[0])
                     try:
-                        conn.drain_events(timeout = min_wait)
+                        # get next event
+                        if len(schedule_queue) == 0:
+                            logger.info(f"Waiting on message queue (no currently scheduled runs)")
+                            conn.drain_events()
+                        else:
+                            next_time, next_sk = schedule_queue.pop(0)
+                            # if event is late, run it now
+                            if next_time < plm.now():
+                                logger.info(f"Scheduled event {next_sk} ({self.schedules[next_sk]}) at {next_time} is late; running now")
+                                raise TimeoutError
+                            # otherwise, wait on message loop and next event
+                            logger.info(f"Waiting on message queue or next run of {next_sk} ({self.schedules[next_sk]}) at {next_time}")
+                            conn.drain_events(timeout = (next_time - plm.now()).seconds)
                     except KeyboardInterrupt:
                         logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
                         break
@@ -247,6 +262,7 @@ class AssetGraph:
                                 self.refresh_downstream(sch.asset)
                         else:
                             raise ValueError(f"Action {sch.action} in schedule {next_sk} not recognized.")
+                        
 
     def _initialize_resources(self, resources):
         logger.info(f"Initializing {len(resources)} build resources")
@@ -309,7 +325,9 @@ class AssetGraph:
     def build(self):
         logger.info(f"Building all assets")
         sorted_nodes = list(nx.topological_sort(self.graph))
-        asyncio.run(self._build(sorted_nodes))
+        needs_rerun = True
+        while needs_rerun: 
+            needs_rerun = asyncio.run(self._build(sorted_nodes))
 
     def build_upstream(self, asset_or_assets):
         logger.info(f"Building assets upstream of (and including) {asset_or_assets}")
@@ -321,7 +339,9 @@ class AssetGraph:
             nodes_to_build.extend(nx.ancestors(self.graph, asset))
         sg = self.graph.subgraph(nodes_to_build)
         sorted_nodes = list(nx.topological_sort(sg))
-        asyncio.run(self._build(sorted_nodes))
+        needs_rerun = True
+        while needs_rerun: 
+            needs_rerun = asyncio.run(self._build(sorted_nodes))
 
     async def _build(self, sorted_nodes):
         required_resources = set()
@@ -340,10 +360,15 @@ class AssetGraph:
             task_map[asset] = task
 
         all_successful = True
+        workers_to_notify = {}
         for asset in sorted_nodes:
-            build_result_flag = await task_map[asset]
-            all_successful = all_successful and build_result_flag
-
+            build_result = await task_map[asset]
+            all_successful = all_successful and (build_result != BuildResult.Failed)
+            if build_result == BuildResult.Rebuilt:
+                for worker in self.workers:
+                    if asset in worker.watched_assets:
+                        workers_to_notify.add(worker)
+                
         self._cleanup_resources(required_resources)
 
         summary = self.summarize(display=False)
@@ -353,6 +378,22 @@ class AssetGraph:
         else:
             logger.info(f"Build successful")
             logger.info(summary, colorize=True)
+
+        if len(workers_to_notify) > 0:
+            logger.info(f"Build triggered graph workers. Restructuring...")
+            any_changed = False
+            for worker in workers_to_notify:
+                logger.info(f"Running graph worker {worker}")
+                changed = worker.restructure(self.graph)
+                any_changed = any_changed or changed
+            if any_changed:
+                logger.info(f"Graph structure changed. Triggering rebuild...")
+            else:
+                logger.info(f"Graph structure unchanged. No rebuild necessary")
+            return any_changed
+        else:
+            logger.info(f"No graph workers triggered during build.")
+            return False
 
     async def _refresh_asset(self, asset):
         # Status refresh propagates using the following cascade of rules:
@@ -433,7 +474,7 @@ class AssetGraph:
                 asset.status = AssetStatus.Failed
                 asset.message = "Build failed: exception during build"
                 logger.exception(f"Asset {asset} build failed (status: {asset.status}): error in-build")
-                return False
+                return BuildResult.Failed
 
             # refresh the timestamp cache
             ts = await asset.timestamp()
@@ -455,23 +496,24 @@ class AssetGraph:
                 asset.status = AssetStatus.Failed
                 asset.message = "Build failed: asset unavailable"
                 logger.error(f"Asset {asset} build failed (status: {asset.status}): asset unavailable after build")
-                return False
+                return BuildResult.Failed
 
             # ensure that it now has a newer timestamp than parents
             if not all(pt < ts for pt in parent_timestamps):
                 asset.status = AssetStatus.Failed
                 asset.message = "Build failed: asset timestamp older than parents"
                 logger.error(f"Asset {asset} build failed (status: {asset.status}): asset timestamp older than parents")
-                return False
+                return BuildResult.Failed
 
             # update to current status
             asset.status = AssetStatus.Current
             asset.message = "Build complete"
             logger.info(f"Asset {asset} build completed successfully (status: {fmt(asset.status)})")
         else:
-            logger.debug(f"Asset {asset} not ready to rebuild.")
+            logger.debug(f"Asset {asset} not ready to rebuild. Skipping.")
+            return BuildResult.Skipped
 
-        return True
+        return BuildResult.Rebuilt
 
     def _collect_groups(self):
         logger.debug("Collecting node (sub)groups")
