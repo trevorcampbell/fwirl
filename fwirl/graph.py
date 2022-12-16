@@ -261,15 +261,17 @@ class AssetGraph:
                             conn.drain_events(timeout = (next_time - plm.now()).seconds)
                     except KeyboardInterrupt:
                         logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
-                        executor_sch.sch = Schedule(action = 'exit', cron_string = '', asset=None)
-                        executor_condition.notify()
+                        with executor_condition:
+                            executor_sch.sch = Schedule(action = 'exit', cron_string = '', asset=None)
+                            executor_condition.notify()
                         executor_thread.join()
                         break
                     except TimeoutError:
                         # do something with next_sk
                         logger.info(f"Running scheduled event {next_sk}")
-                        executor_sch.sch = self.schedules[next_sk]
-                        executor_condition.notify()
+                        with executor_condition:
+                            executor_sch.sch = self.schedules[next_sk]
+                            executor_condition.notify()
 
     def _executor(self, cond, schw):
         logger.info("Executor started")
