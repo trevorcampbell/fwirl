@@ -10,11 +10,17 @@ from kombu import Connection, Exchange, Queue
 from .schedule import Schedule
 import asyncio
 from enum import Enum
+from threading import Thread, Condition
 
 class BuildResult(Enum):
     Rebuilt = 0
     Skipped = 1
     Failed = 2
+
+class _ScheduleWrapper:
+    def __init__(self):
+        self.sch = None
+
 
 __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 __MESSAGE_TTL__ = 1
@@ -159,6 +165,9 @@ class AssetGraph:
             if body["schedules"]:
                 self.list_schedules()
 
+        # TODO instead of calling build and refresh directly,
+        # put a temporary item on the scheduling queue -- that way
+        # message handling is separate from worker dispatch
         if body["type"] == "build":
             asset = None
             for _asset in self.graph:
@@ -212,8 +221,15 @@ class AssetGraph:
         message.ack()
 
     def run(self):
+        # start up the worker thread
+        logger.info(f"Beginning fwirl executor thread")
+        executor_condition = Condition()
+        executor_sch = _ScheduleWrapper()
+        executor_thread = Thread(name = "fwirl_executor", target = self._executor, args=(cond, executor_sch))
+        executor_thread.start()
+
         # run the message handling loop
-        logger.info(f"Beginning fwirl main loop")
+        logger.info(f"Beginning fwirl main message handling loop")
         exchange = Exchange('fwirl', 'direct', durable = False)
         queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
         with Connection(__RABBIT_URL__) as conn:
@@ -245,24 +261,39 @@ class AssetGraph:
                             conn.drain_events(timeout = (next_time - plm.now()).seconds)
                     except KeyboardInterrupt:
                         logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
+                        executor_sch.sch = Schedule(action = 'exit', cron_string = '', asset=None)
+                        executor_condition.notify()
+                        executor_thread.join()
                         break
                     except TimeoutError:
                         # do something with next_sk
                         logger.info(f"Running scheduled event {next_sk}")
-                        sch = self.schedules[next_sk]
-                        if sch.action == "build":
-                            if sch.asset is None:
-                                self.build()
-                            else:
-                                self.build_upstream(sch.asset)
-                        elif sch.action == "refresh":
-                            if sch.asset is None:
-                                self.refresh()
-                            else:
-                                self.refresh_downstream(sch.asset)
-                        else:
-                            raise ValueError(f"Action {sch.action} in schedule {next_sk} not recognized.")
-                        
+                        executor_sch.sch = self.schedules[next_sk]
+                        executor_condition.notify()
+
+    def _executor(self, cond, schw):
+        logger.info("Executor started")
+        with cond:
+            while True:
+                logger.debug(f"Executor waiting")
+                cond.wait()
+                sch = schw.sch
+                if sch.action == "exit":
+                    logger.info(f"Executor caught exit signal; returning")
+                    break
+                elif sch.action == "build":
+                    if sch.asset is None:
+                        self.build()
+                    else:
+                        self.build_upstream(sch.asset)
+                elif sch.action == "refresh":
+                    if sch.asset is None:
+                        self.refresh()
+                    else:
+                        self.refresh_downstream(sch.asset)
+                else:
+                    raise ValueError(f"Action {sch.action} in schedule not recognized.")
+
 
     def _initialize_resources(self, resources):
         logger.info(f"Initializing {len(resources)} build resources")
@@ -326,7 +357,7 @@ class AssetGraph:
         logger.info(f"Building all assets")
         sorted_nodes = list(nx.topological_sort(self.graph))
         needs_rerun = True
-        while needs_rerun: 
+        while needs_rerun:
             needs_rerun = asyncio.run(self._build(sorted_nodes))
 
     def build_upstream(self, asset_or_assets):
@@ -340,7 +371,7 @@ class AssetGraph:
         sg = self.graph.subgraph(nodes_to_build)
         sorted_nodes = list(nx.topological_sort(sg))
         needs_rerun = True
-        while needs_rerun: 
+        while needs_rerun:
             needs_rerun = asyncio.run(self._build(sorted_nodes))
 
     async def _build(self, sorted_nodes):
@@ -368,7 +399,7 @@ class AssetGraph:
                 for worker in self.workers:
                     if asset in worker.watched_assets:
                         workers_to_notify.add(worker)
-                
+
         self._cleanup_resources(required_resources)
 
         summary = self.summarize(display=False)
