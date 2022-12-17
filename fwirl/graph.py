@@ -10,6 +10,8 @@ from kombu import Connection, Exchange, Queue
 from .schedule import Schedule
 import asyncio
 from enum import Enum
+from queue import Queue as ThreadSafeQueue, Empty
+from threading import Thread
 
 class BuildResult(Enum):
     Rebuilt = 0
@@ -58,6 +60,8 @@ class AssetGraph:
             for service in notifiers:
                 handler = NotificationHandler(service, defaults=notifiers[service]["params"])
                 logger.add(handler, level=notifiers[service]["level"])
+        self.message_queue = ThreadSafeQueue()
+        self._stop_messaging_flag = False
 
     def add_assets(self, assets):
         logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")
@@ -146,78 +150,170 @@ class AssetGraph:
         asset.status = AssetStatus.Stale
         self.refresh_downstream(asset)
 
-    def on_message(self, body, message):
-        logger.info(f"Received {body['type']} command")
+    def _on_message(self, body, message):
+        logger.info(f"Message loop: received {body['type']} message")
         logger.debug(f"Message body: {body}")
-
-        if body["type"] == "summarize":
-            self.summarize()
-
-        if body["type"] == "ls":
-            if body["assets"]:
-                self.list_assets()
-            if body["schedules"]:
-                self.list_schedules()
-
-        if body["type"] == "build":
-            asset = None
-            for _asset in self.graph:
-                if _asset.key == body["asset_key"]:
-                    asset = _asset
-            if asset is not None:
-                self.build_upstream(asset)
-            else:
-                self.build()
-
-        if body["type"] == "refresh":
-            asset = None
-            for _asset in self.graph:
-                if _asset.key == body["asset_key"]:
-                    asset = _asset
-            if asset is not None:
-                self.refresh_downstream(asset)
-            else:
-                self.refresh()
-
-        if body["type"] == "pause":
-            asset = None
-            for _asset in self.graph:
-                if _asset.key == body["key"]:
-                    asset = _asset
-            if asset is not None:
-                self.pause_asset(asset)
-            if body["key"] in self.schedules:
-                self.pause_schedule(body["key"])
-
-        if body["type"] == "unpause":
-            asset = None
-            for _asset in self.graph:
-                if _asset.key == body["key"]:
-                    asset = _asset
-            if asset is not None:
-                self.unpause_asset(asset)
-            if body["key"] in self.schedules:
-                self.unpause_schedule(body["key"])
-
-        if body["type"] == "schedule":
-            asset = None
-            for _asset in self.graph:
-                if _asset.key == body["asset_key"]:
-                    asset = _asset
-            self.schedule(body["schedule_key"], body["action"], body["cron_str"], asset)
-
-        if body["type"] == "unschedule":
-            self.unschedule(body["schedule_key"])
-
         message.ack()
+        self.message_queue.put(body)
+        if body["type"] == "shutdown":
+            self._stop_messaging_flag = True
 
-    def run(self):
-        # run the message handling loop
-        logger.info(f"Beginning fwirl main loop")
+        #if body["type"] == "summarize":
+        #    self.summarize()
+
+        #if body["type"] == "ls":
+        #    if body["assets"]:
+        #        self.list_assets()
+        #    if body["schedules"]:
+        #        self.list_schedules()
+
+        #if body["type"] == "build":
+        #    asset = None
+        #    for _asset in self.graph:
+        #        if _asset.key == body["asset_key"]:
+        #            asset = _asset
+        #    if asset is not None:
+        #        self.build_upstream(asset)
+        #    else:
+        #        self.build()
+
+        #if body["type"] == "refresh":
+        #    asset = None
+        #    for _asset in self.graph:
+        #        if _asset.key == body["asset_key"]:
+        #            asset = _asset
+        #    if asset is not None:
+        #        self.refresh_downstream(asset)
+        #    else:
+        #        self.refresh()
+
+        #if body["type"] == "pause":
+        #    asset = None
+        #    for _asset in self.graph:
+        #        if _asset.key == body["key"]:
+        #            asset = _asset
+        #    if asset is not None:
+        #        self.pause_asset(asset)
+        #    if body["key"] in self.schedules:
+        #        self.pause_schedule(body["key"])
+
+        #if body["type"] == "unpause":
+        #    asset = None
+        #    for _asset in self.graph:
+        #        if _asset.key == body["key"]:
+        #            asset = _asset
+        #    if asset is not None:
+        #        self.unpause_asset(asset)
+        #    if body["key"] in self.schedules:
+        #        self.unpause_schedule(body["key"])
+
+        #if body["type"] == "schedule":
+        #    asset = None
+        #    for _asset in self.graph:
+        #        if _asset.key == body["asset_key"]:
+        #            asset = _asset
+        #    self.schedule(body["schedule_key"], body["action"], body["cron_str"], asset)
+
+        #if body["type"] == "unschedule":
+        #    self.unschedule(body["schedule_key"])
+
+        #message.ack()
+
+    def _message_wait(self):
         exchange = Exchange('fwirl', 'direct', durable = False)
         queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
         with Connection(__RABBIT_URL__) as conn:
-            with conn.Consumer(queue, callbacks=[self.on_message]):
+            with conn.Consumer(queue, callbacks=[self._on_message]):
+                while True:
+                    conn.drain_events()
+                    if self._stop_messaging_flag:
+                        self._stop_messaging_flag = False
+                        break
+ 
+    def _get_message(self, timeout):
+        try:
+            msg = self.message_queue.get(timeout=timeout)
+        except Empty:
+            return None
+        return msg
+
+    def run(self):
+        # run the message handling loop
+        # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
+        logger.info(f"Starting fwirl messaging loop")
+        th = Thread(name = "fwirl_messaging_loop", target=self._message_wait, args=None)
+        th.start()
+
+        logger.info(f"Starting fwirl job event loop")
+        # run the task executor/scheduler async
+        try:
+            asyncio.run(self._run())
+        except KeyboardInterrupt:
+            logger.info(f"Caught keyboard interrupt; stopping messaging loop of asset graph {self.key}")
+            exchange = Exchange('fwirl', 'direct', durable = False)
+            queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
+            with Connection(__RABBIT_URL__) as conn:
+                producer = conn.Producer()
+                producer.publish({"type": "shutdown"}, exchange=exchange, routing_key = self.key, declare=[queue])
+        th.join()
+
+    # TODO implement job priority as 3rd tuple element in job queue; sort by priority first (allows jumping the queue for summarize, pause, etc)
+    async def _run(self):
+        job_queue = []
+        job_running = []
+        while True:
+            # remove paused schedules from job queue   
+            job_queue = filter(lambda s: not self.schedules[s[0]].is_paused(), job_queue)
+            # add all occurrences of each scheduled job onto the queue between the most recent one on the queue and the next future one
+            for sk in self.schedules:
+                # get the latest current scheduled time for this schedule, or now if none scheduled
+                times_for_sk = [job[1] for job in job_queue if job[0] == sk]
+                if len(times_for_sk) > 0:
+                    latest = max(times_for_sk)
+                else:
+                    latest = plm.now()
+                # loop over runs starting from most recent one on the queue until the next one after the current time, adding all
+                if not self.schedules[sk].is_paused():
+                    while latest < plm.now() and (self.schedules[sk].next(dt = latest) is not None):
+                        new_time = latest + plm.duration(seconds = self.schedules[sk].next(dt = latest))
+                        job_queue.put((sk, new_time))
+                        latest = new_time
+
+            # sort jobs by time
+            job_queue.sort(key = lambda job : job[1])
+
+            # if not currently running a job:
+            #   - if job queue empty, just wait indefinitely for next message
+            #   - if job queue nonempty, and next job is in the future, wait for message with timeout on next job 
+            #   - if job queue nonempty, and next job is in the past, immediately run all compatible jobs in the past, wait for message with indefinite timeout
+            # if currently running a job:
+            #   - if job queue empty, wait on running jobs and indefinite for next message
+            #   - if job queue nonempty and next job is in the future
+
+            # - if not currently running a job and next scheduled run is in the future, wait for next message with timeout on next scheduled run
+            # - if not currently running a job and next scheduled run is in the past, start the run and wait for next message indefinitely
+            if len(job_queue) == 0:
+                # if job queue is empty, just wait for the next message indefinitely
+                msg = await self._get_message(timeout = None)
+            else:
+                # otherwise:
+                # - if not currently running a job and next scheduled run is in the future, wait for next message with timeout on next scheduled run
+                # - if not currently running a job and next scheduled run is in the past, start the run and wait for next message indefinitely
+                
+
+            # pop the next job
+            next_sk, next_time = schedule_queue.pop(0)
+            
+            # check if it's late (30 second window)
+            logger.info(f"Running event {next_sk} ({self.schedules[next_sk]}) scheduled for {next_time} now")
+            if next_time + plm.duration(seconds=30) < plm.now():
+                logger.warning(f"Scheduled event {next_sk} is late; supposed to run at {next_time}, time now {plm.now()}")
+                logger.warning(f"Job queue currently has length {len(job_queue)}")
+                        
+            get_msg_coroutine = asyncio.to_thread(self._get_message, timeout)
+            
+            pass
+        
                 # create an empty queue of schedules
                 schedule_queue = []
                 while True:
