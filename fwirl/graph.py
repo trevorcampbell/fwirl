@@ -282,24 +282,11 @@ class AssetGraph:
             # sort jobs by time
             job_queue.sort(key = lambda job : job[1])
 
-            # if not currently running a job:
-            #   - if job queue empty, just wait indefinitely for next message
-            #   - if job queue nonempty, and next job is in the future, wait for message with timeout on next job 
-            #   - if job queue nonempty, and next job is in the past, immediately run all compatible jobs in the past, wait for message with indefinite timeout
-            # if currently running a job:
-            #   - if job queue empty, wait on running jobs and indefinite for next message
-            #   - if job queue nonempty and next job is in the future
-
-            # - if not currently running a job and next scheduled run is in the future, wait for next message with timeout on next scheduled run
-            # - if not currently running a job and next scheduled run is in the past, start the run and wait for next message indefinitely
-            if len(job_queue) == 0:
-                # if job queue is empty, just wait for the next message indefinitely
-                msg = await self._get_message(timeout = None)
-            else:
-                # otherwise:
-                # - if not currently running a job and next scheduled run is in the future, wait for next message with timeout on next scheduled run
-                # - if not currently running a job and next scheduled run is in the past, start the run and wait for next message indefinitely
-                
+            # TODO
+            # loop through scheduled jobs from earliest
+            # run each one until one would be incompatible with currently running
+            # if any jobs are running, wait indefinitely on message queue
+            # if no jobs are running, wait until next job
 
             # pop the next job
             next_sk, next_time = schedule_queue.pop(0)
