@@ -13,6 +13,9 @@ from enum import Enum
 from queue import Queue as ThreadSafeQueue, Empty
 from threading import Thread
 
+class ShutdownSignal(Exception):
+    pass
+
 class BuildResult(Enum):
     Rebuilt = 0
     Skipped = 1
@@ -52,6 +55,7 @@ async def wait_for_dependencies(task, parents):
     return result
 
 class AssetGraph:
+
     def __init__(self, key, notifiers = None):
         self.graph = nx.DiGraph()
         self.key = key
@@ -62,6 +66,18 @@ class AssetGraph:
                 logger.add(handler, level=notifiers[service]["level"])
         self.message_queue = ThreadSafeQueue()
         self._stop_messaging_flag = False
+        # map of action to whether it is read only w.r.t. the asset graph
+        self._action_modifies_graph = {
+            'refresh' : True,
+            'build' : True,
+            'cancel' : False,
+            'summarize' : False,
+            'ls' : False,
+            'pause' : True,
+            'unpause' : True,
+            'schedule' : False,
+            'unschedule' : False
+        }
 
     def add_assets(self, assets):
         logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")
@@ -158,67 +174,6 @@ class AssetGraph:
         if body["type"] == "shutdown":
             self._stop_messaging_flag = True
 
-        #if body["type"] == "summarize":
-        #    self.summarize()
-
-        #if body["type"] == "ls":
-        #    if body["assets"]:
-        #        self.list_assets()
-        #    if body["schedules"]:
-        #        self.list_schedules()
-
-        #if body["type"] == "build":
-        #    asset = None
-        #    for _asset in self.graph:
-        #        if _asset.key == body["asset_key"]:
-        #            asset = _asset
-        #    if asset is not None:
-        #        self.build_upstream(asset)
-        #    else:
-        #        self.build()
-
-        #if body["type"] == "refresh":
-        #    asset = None
-        #    for _asset in self.graph:
-        #        if _asset.key == body["asset_key"]:
-        #            asset = _asset
-        #    if asset is not None:
-        #        self.refresh_downstream(asset)
-        #    else:
-        #        self.refresh()
-
-        #if body["type"] == "pause":
-        #    asset = None
-        #    for _asset in self.graph:
-        #        if _asset.key == body["key"]:
-        #            asset = _asset
-        #    if asset is not None:
-        #        self.pause_asset(asset)
-        #    if body["key"] in self.schedules:
-        #        self.pause_schedule(body["key"])
-
-        #if body["type"] == "unpause":
-        #    asset = None
-        #    for _asset in self.graph:
-        #        if _asset.key == body["key"]:
-        #            asset = _asset
-        #    if asset is not None:
-        #        self.unpause_asset(asset)
-        #    if body["key"] in self.schedules:
-        #        self.unpause_schedule(body["key"])
-
-        #if body["type"] == "schedule":
-        #    asset = None
-        #    for _asset in self.graph:
-        #        if _asset.key == body["asset_key"]:
-        #            asset = _asset
-        #    self.schedule(body["schedule_key"], body["action"], body["cron_str"], asset)
-
-        #if body["type"] == "unschedule":
-        #    self.unschedule(body["schedule_key"])
-
-        #message.ack()
-
     def _message_wait(self):
         exchange = Exchange('fwirl', 'direct', durable = False)
         queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
@@ -237,6 +192,66 @@ class AssetGraph:
             return None
         return msg
 
+    def _process_message(self, msg):
+        if msg["type"] == "summarize":
+            self.summarize()
+
+        if msg["type"] == "ls":
+            if msg["assets"]:
+                self.list_assets()
+            if msg["schedules"]:
+                self.list_schedules()
+
+        if msg["type"] == "build":
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == msg["asset_key"]:
+                    asset = _asset
+            if asset is not None:
+                self.build_upstream(asset)
+            else:
+                self.build()
+
+        if msg["type"] == "refresh":
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == msg["asset_key"]:
+                    asset = _asset
+            if asset is not None:
+                self.refresh_downstream(asset)
+            else:
+                self.refresh()
+
+        if msg["type"] == "pause":
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == msg["key"]:
+                    asset = _asset
+            if asset is not None:
+                self.pause_asset(asset)
+            if msg["key"] in self.schedules:
+                self.pause_schedule(msg["key"])
+
+        if msg["type"] == "unpause":
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == msg["key"]:
+                    asset = _asset
+            if asset is not None:
+                self.unpause_asset(asset)
+            if msg["key"] in self.schedules:
+                self.unpause_schedule(msg["key"])
+
+        if msg["type"] == "schedule":
+            asset = None
+            for _asset in self.graph:
+                if _asset.key == msg["asset_key"]:
+                    asset = _asset
+            self.schedule(msg["schedule_key"], msg["action"], msg["cron_str"], asset)
+
+        if msg["type"] == "unschedule":
+            self.unschedule(msg["schedule_key"])
+
     def run(self):
         # run the message handling loop
         # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
@@ -249,18 +264,22 @@ class AssetGraph:
         try:
             asyncio.run(self._run())
         except KeyboardInterrupt:
-            logger.info(f"Caught keyboard interrupt; stopping messaging loop of asset graph {self.key}")
+            logger.info(f"Caught keyboard interrupt; stopping main loop and messaging loop of asset graph {self.key}")
             exchange = Exchange('fwirl', 'direct', durable = False)
             queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
             with Connection(__RABBIT_URL__) as conn:
                 producer = conn.Producer()
                 producer.publish({"type": "shutdown"}, exchange=exchange, routing_key = self.key, declare=[queue])
+        except ShutdownSignal:
+            # this only happens if the messaging loop got the "shutdown" message, so it is already shutting itself down, no need to publish shutdown msg
+            logger.info(f"Caught shutdown signal; stopping main loop of asset graph {self.key}")
         th.join()
 
     # TODO implement job priority as 3rd tuple element in job queue; sort by priority first (allows jumping the queue for summarize, pause, etc)
     async def _run(self):
         job_queue = []
         job_running = []
+        message_task = None
         while True:
             # remove paused schedules from job queue   
             job_queue = filter(lambda s: not self.schedules[s[0]].is_paused(), job_queue)
@@ -282,69 +301,52 @@ class AssetGraph:
             # sort jobs by time
             job_queue.sort(key = lambda job : job[1])
 
-            # TODO
             # loop through scheduled jobs from earliest
             # run each one until one would be incompatible with currently running
             # if any jobs are running, wait indefinitely on message queue
             # if no jobs are running, wait until next job
+            running_keys = [j[0] for j in job_running]
+            running_jobs_modify_graph = any([self.schedules[sk].modifies_graph for sk in running_keys])
+            while len(job_queue) > 0 and job_queue[0][1] < plm.now():
+                if running_jobs_modify_graph and self.schedules[job_queue[0][0]].modifies_graph:
+                    break
+                # pop the next job
+                next_sk, next_time = schedule_queue.pop(0)
+                
+                # check if it's late (30 second window)
+                logger.info(f"Running event {next_sk} ({self.schedules[next_sk]}) scheduled for {next_time} now")
+                if next_time + plm.duration(seconds=30) < plm.now():
+                    logger.warning(f"Scheduled event {next_sk} is late; supposed to run at {next_time}, time now {plm.now()}")
+                    logger.warning(f"Job queue currently has length {len(job_queue)}")
+                
+                # run the job TODO
+                task = asyncio.create_task(self.schedules[next_sk].generate_coroutine())
+                job_running.append((next_sk, task)) 
+                
+            # if no message task is running, start one
+            if message_task is None:
+                # if jobs are running, just wait indefinitely for next message
+                # if no jobs are running, wait for next job
+                timeout = None
+                if len(job_running) == 0 and len(job_queue) > 0:
+                    timeout = (job_queue[0][1] - plm.now()).seconds
+                message_task = asyncio.create_task(asyncio.to_thread(self._get_message, timeout))
 
-            # pop the next job
-            next_sk, next_time = schedule_queue.pop(0)
+            # wait for next proc
+            await asyncio.wait(job_running + [message_task],  return_when=asyncio.FIRST_COMPLETED)
+
+            # if the message task is done, process it
+            if message_task.done():
+                msg = await message_task
+                self._process_msg(msg)
+                message_task = None
             
-            # check if it's late (30 second window)
-            logger.info(f"Running event {next_sk} ({self.schedules[next_sk]}) scheduled for {next_time} now")
-            if next_time + plm.duration(seconds=30) < plm.now():
-                logger.warning(f"Scheduled event {next_sk} is late; supposed to run at {next_time}, time now {plm.now()}")
-                logger.warning(f"Job queue currently has length {len(job_queue)}")
-                        
-            get_msg_coroutine = asyncio.to_thread(self._get_message, timeout)
-            
-            pass
-        
-                # create an empty queue of schedules
-                schedule_queue = []
-                while True:
-                    # remove paused schedules
-                    schedule_queue = filter(lambda s: not self.schedules[s[1]].is_paused(), schedule_queue)
-                    # add schedules to queue; only those that are (1) not in the queue already, (2) not paused, and (3) have a next time (e.g. if any are one-offs, they wont be run again)
-                    for sk in self.schedules:
-                        if (sk not in [s[1] for s in schedule_queue]) and (not self.schedules[sk].is_paused()) and (self.schedules[sk].next() is not None):
-                            schedule_queue.put((plm.now() + plm.duration(seconds = self.schedules[sk].next()), sk))
-                    # sort queue based on event time
-                    schedule_queue.sort(key = lambda s: s[0])
-                    try:
-                        # get next event
-                        if len(schedule_queue) == 0:
-                            logger.info(f"Waiting on message queue (no currently scheduled runs)")
-                            conn.drain_events()
-                        else:
-                            next_time, next_sk = schedule_queue.pop(0)
-                            # if event is late, run it now
-                            if next_time < plm.now():
-                                logger.info(f"Scheduled event {next_sk} ({self.schedules[next_sk]}) at {next_time} is late; running now")
-                                raise TimeoutError
-                            # otherwise, wait on message loop and next event
-                            logger.info(f"Waiting on message queue or next run of {next_sk} ({self.schedules[next_sk]}) at {next_time}")
-                            conn.drain_events(timeout = (next_time - plm.now()).seconds)
-                    except KeyboardInterrupt:
-                        logger.info(f"Caught keyboard interrupt; stopping event loop of asset graph {self.key}")
-                        break
-                    except TimeoutError:
-                        # do something with next_sk
-                        logger.info(f"Running scheduled event {next_sk}")
-                        sch = self.schedules[next_sk]
-                        if sch.action == "build":
-                            if sch.asset is None:
-                                self.build()
-                            else:
-                                self.build_upstream(sch.asset)
-                        elif sch.action == "refresh":
-                            if sch.asset is None:
-                                self.refresh()
-                            else:
-                                self.refresh_downstream(sch.asset)
-                        else:
-                            raise ValueError(f"Action {sch.action} in schedule {next_sk} not recognized.")
+            # loop over jobs that ran, push any response messages onto the response queue, and clear out completed tasks
+            for job in job_running:
+                if job.done():
+                    res = await job
+                    # TODO do something with res
+            job_running = filter(lambda j : not j.done(), job_running)
 
 
     def _initialize_resources(self, resources):
