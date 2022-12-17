@@ -223,9 +223,9 @@ class AssetGraph:
                 while True:
                     # remove paused schedules
                     schedule_queue = filter(lambda s: not self.schedules[s[1]].is_paused(), schedule_queue)
-                    # add schedules to queue
+                    # add schedules to queue; only those that are (1) not in the queue already, (2) not paused, and (3) have a next time (e.g. if any are one-offs, they wont be run again)
                     for sk in self.schedules:
-                        if (sk not in [s[1] for s in schedule_queue]) and (not self.schedules[sk].is_paused()):
+                        if (sk not in [s[1] for s in schedule_queue]) and (not self.schedules[sk].is_paused()) and (self.schedules[sk].next() is not None):
                             schedule_queue.put((plm.now() + plm.duration(seconds = self.schedules[sk].next()), sk))
                     # sort queue based on event time
                     schedule_queue.sort(key = lambda s: s[0])
@@ -262,7 +262,7 @@ class AssetGraph:
                                 self.refresh_downstream(sch.asset)
                         else:
                             raise ValueError(f"Action {sch.action} in schedule {next_sk} not recognized.")
-                        
+
 
     def _initialize_resources(self, resources):
         logger.info(f"Initializing {len(resources)} build resources")
@@ -326,7 +326,7 @@ class AssetGraph:
         logger.info(f"Building all assets")
         sorted_nodes = list(nx.topological_sort(self.graph))
         needs_rerun = True
-        while needs_rerun: 
+        while needs_rerun:
             needs_rerun = asyncio.run(self._build(sorted_nodes))
 
     def build_upstream(self, asset_or_assets):
@@ -340,7 +340,7 @@ class AssetGraph:
         sg = self.graph.subgraph(nodes_to_build)
         sorted_nodes = list(nx.topological_sort(sg))
         needs_rerun = True
-        while needs_rerun: 
+        while needs_rerun:
             needs_rerun = asyncio.run(self._build(sorted_nodes))
 
     async def _build(self, sorted_nodes):
@@ -368,7 +368,7 @@ class AssetGraph:
                 for worker in self.workers:
                     if asset in worker.watched_assets:
                         workers_to_notify.add(worker)
-                
+
         self._cleanup_resources(required_resources)
 
         summary = self.summarize(display=False)
