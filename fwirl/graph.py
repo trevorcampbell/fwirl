@@ -21,7 +21,6 @@ class _ScheduleWrapper:
     def __init__(self):
         self.sch = None
 
-
 __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 __MESSAGE_TTL__ = 1
 
@@ -166,7 +165,7 @@ class AssetGraph:
                 self.list_schedules()
 
         # TODO instead of calling build and refresh directly,
-        # put a temporary item on the scheduling queue -- that way
+        # add a schedule item with a cron string for now -- that way
         # message handling is separate from worker dispatch
         if body["type"] == "build":
             asset = None
@@ -188,6 +187,8 @@ class AssetGraph:
             else:
                 self.refresh()
 
+        # TODO thread-safe pausing
+        # TODO add a refresh-downstream if asset paused
         if body["type"] == "pause":
             asset = None
             for _asset in self.graph:
@@ -198,6 +199,8 @@ class AssetGraph:
             if body["key"] in self.schedules:
                 self.pause_schedule(body["key"])
 
+        # TODO thread-safe unpausing
+        # TODO add a refresh-downstream if asset paused
         if body["type"] == "unpause":
             asset = None
             for _asset in self.graph:
@@ -220,6 +223,9 @@ class AssetGraph:
 
         message.ack()
 
+    # TODO just do the message loop here -- move scheduling to the executor?
+    # TODO don't do all this complicated scheduling logic related to skips
+    # just push onto queue and pull off queue. mark late runs as late, but keep the same run order.
     def run(self):
         # start up the worker thread
         logger.info(f"Beginning fwirl executor thread")
@@ -239,9 +245,9 @@ class AssetGraph:
                 while True:
                     # remove paused schedules
                     schedule_queue = filter(lambda s: not self.schedules[s[1]].is_paused(), schedule_queue)
-                    # add schedules to queue
+                    # add schedules to queue -- only those that aren't already in the queue, are not paused, and have a next event (i.e. aren't only in the past)
                     for sk in self.schedules:
-                        if (sk not in [s[1] for s in schedule_queue]) and (not self.schedules[sk].is_paused()):
+                        if (sk not in [s[1] for s in schedule_queue]) and (not self.schedules[sk].is_paused()) and (self.schedules[sk].next() is not None):
                             schedule_queue.put((plm.now() + plm.duration(seconds = self.schedules[sk].next()), sk))
                     # sort queue based on event time
                     schedule_queue.sort(key = lambda s: s[0])
@@ -254,7 +260,7 @@ class AssetGraph:
                             next_time, next_sk = schedule_queue.pop(0)
                             # if event is late, run it now
                             if next_time < plm.now():
-                                logger.info(f"Scheduled event {next_sk} ({self.schedules[next_sk]}) at {next_time} is late; running now")
+                                logger.warning(f"Scheduled event {next_sk} ({self.schedules[next_sk]}) at {next_time} is late; running now")
                                 raise TimeoutError
                             # otherwise, wait on message loop and next event
                             logger.info(f"Waiting on message queue or next run of {next_sk} ({self.schedules[next_sk]}) at {next_time}")
@@ -273,28 +279,36 @@ class AssetGraph:
                             executor_sch.sch = self.schedules[next_sk]
                             executor_condition.notify()
 
+    # TODO -- run builds in create_task so that we can add an async summarize task, pause asset, cancel build/refresh, etc?
     def _executor(self, cond, schw):
         logger.info("Executor started")
-        with cond:
-            while True:
-                logger.debug(f"Executor waiting")
-                cond.wait()
-                sch = schw.sch
-                if sch.action == "exit":
-                    logger.info(f"Executor caught exit signal; returning")
-                    break
-                elif sch.action == "build":
-                    if sch.asset is None:
-                        self.build()
-                    else:
-                        self.build_upstream(sch.asset)
-                elif sch.action == "refresh":
-                    if sch.asset is None:
-                        self.refresh()
-                    else:
-                        self.refresh_downstream(sch.asset)
+        while True:
+            with cond:
+                # wait for a notification from the main thread
+                while schw.sch is None:
+                    logger.debug(f"Executor waiting")
+                    cond.wait()
+                # pull the action/details out of the wrapper
+                logger.debug(f"Executor woke up")
+                action = schw.sch.action
+                asset = schw.sch.asset
+                schw.sch = None
+
+            if action == "exit":
+                logger.info(f"Executor caught exit signal; returning")
+                break
+            elif action == "build":
+                if asset is None:
+                    self.build()
                 else:
-                    raise ValueError(f"Action {sch.action} in schedule not recognized.")
+                    self.build_upstream(asset)
+            elif action == "refresh":
+                if asset is None:
+                    self.refresh()
+                else:
+                    self.refresh_downstream(asset)
+            else:
+                raise ValueError(f"Action {action} in schedule not recognized.")
 
 
     def _initialize_resources(self, resources):
