@@ -130,7 +130,7 @@ class AssetGraph:
             logger.info(s)
         return s
 
-    def schedule(self, schedule_key, action, cron_string, asset = None):
+    def schedule(self, schedule_key, action, cron_string = '', asset = None, immediate_once = False):
         logger.info(f"Adding new schedule with key {schedule_key}")
         if schedule_key in self.schedules:
             logger.error(f"Tried to add schedule key {schedule_key}, but it already exists. Skipping.")
@@ -138,11 +138,16 @@ class AssetGraph:
         # find asset corresponding to asset_key
         jobstr = f"{action} all" if asset is None else f"{action} {asset}"
         logger.info(f"Adding scheduled run '{schedule_key}' ({jobstr} at '{cron_string}') to graph {self.key}")
-        action_map = {'build' : ( ),
-                      'refresh' : ( )
-                     }
-
-        self.schedules[schedule_key] = Schedule(schedule_key, action_map[action][0], action_map[action][1], cron_string, asset)
+        if action == "refresh":
+            func = self._refresh
+            kwargs = {"assets": asset}
+        elif action == "build":
+            func = self._build
+            kwargs = {"assets": asset}
+        else:
+            logger.error(f"Tried to add schedule key {schedule_key} with unrecognized action {action}. Skipping.")
+            return
+        self.schedules[schedule_key] = Schedule(schedule_key, func, kwargs, cron_string, immediate_once)
 
     def unschedule(self, schedule_key):
         logger.info(f"Removing scheduled run '{schedule_key}'")
@@ -214,33 +219,24 @@ class AssetGraph:
             for _asset in self.graph:
                 if _asset.key == msg["asset_key"]:
                     asset = _asset
-            self.schedule(msg["schedule_key"], msg["action"], msg["cron_str"], asset)
+            self.schedule(msg["schedule_key"], msg["action"], cron_string = msg["cron_string"], asset = asset)
 
         if msg["type"] == "unschedule":
             self.unschedule(msg["schedule_key"])
 
-        # TODO create an IMMEDIATE schedule
         if msg["type"] == "build":
             asset = None
             for _asset in self.graph:
                 if _asset.key == msg["asset_key"]:
                     asset = _asset
-            self.schedule(
-            if asset is not None:
-                self.build_upstream(asset)
-            else:
-                self.build()
+            self.schedule(schedule_key, "build", '', asset = asset, immediate_once = True)
 
-        # TODO create an IMMEDIATE schedule
         if msg["type"] == "refresh":
             asset = None
             for _asset in self.graph:
                 if _asset.key == msg["asset_key"]:
                     asset = _asset
-            if asset is not None:
-                self.refresh_downstream(asset)
-            else:
-                self.refresh()
+            self.schedule(schedule_key, "refresh", '', asset = asset, immediate_once = True)
 
     def run(self):
         # run the message handling loop
@@ -329,7 +325,7 @@ class AssetGraph:
             # if the message task is done, process it
             if message_task.done():
                 msg = await message_task
-                self._process_msg(msg)
+                self._process_message(msg)
                 message_task = None
             
             # if the job is done, clear it
