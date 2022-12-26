@@ -359,24 +359,27 @@ class AssetGraph:
             except Exception as e:
                 logger.exception(f"Resource {resource} cleanup failed; attempting to clean up other resources")
 
-    def refresh(self):
-        logger.info(f"Refreshing all assets")
-        sorted_nodes = list(nx.topological_sort(self.graph))
-        asyncio.run(self._refresh(sorted_nodes))
+    def refresh(self, assets = None):
+        asyncio.run(self._refresh(assets))
 
-    def refresh_downstream(self, asset_or_assets):
-        logger.info(f"Refreshing assets downstream of (and including) {asset_or_assets}")
-        if isinstance(asset_or_assets, Asset):
-            asset_or_assets = [asset_or_assets]
-        nodes_to_refresh = []
-        for asset in asset_or_assets:
-            nodes_to_refresh.append(asset)
-            nodes_to_refresh.extend(nx.descendants(self.graph, asset))
-        sg = self.graph.subgraph(nodes_to_refresh)
-        sorted_nodes = list(nx.topological_sort(sg))
-        asyncio.run(self._refresh(sorted_nodes))
+    def build(self, assets = None):
+        asyncio.run(self._build(assets))
 
-    async def _refresh(self, sorted_nodes):
+    async def _refresh(self, assets = None):
+        if not assets:
+            logger.info(f"Refreshing all assets")
+            sorted_nodes = list(nx.topological_sort(self.graph))
+        else:
+            logger.info(f"Refreshing assets downstream of (and including) {assets}")
+            if isinstance(assets, Asset):
+                assets = [assets]
+            nodes_to_refresh = []
+            for asset in assets:
+                nodes_to_refresh.append(asset)
+                nodes_to_refresh.extend(nx.descendants(self.graph, asset))
+            sg = self.graph.subgraph(nodes_to_refresh)
+            sorted_nodes = list(nx.topological_sort(sg))
+
         required_resources = set()
         for asset in sorted_nodes:
             required_resources.update(asset.resources)
@@ -395,78 +398,75 @@ class AssetGraph:
         self._cleanup_resources(required_resources)
         return
 
-    def build(self):
-        logger.info(f"Building all assets")
-        sorted_nodes = list(nx.topological_sort(self.graph))
-        needs_rerun = True
-        while needs_rerun:
-            needs_rerun = asyncio.run(self._build(sorted_nodes))
-
-    def build_upstream(self, asset_or_assets):
-        logger.info(f"Building assets upstream of (and including) {asset_or_assets}")
-        if isinstance(asset_or_assets, Asset):
-            asset_or_assets = [asset_or_assets]
-        nodes_to_build = []
-        for asset in asset_or_assets:
-            nodes_to_build.append(asset)
-            nodes_to_build.extend(nx.ancestors(self.graph, asset))
-        sg = self.graph.subgraph(nodes_to_build)
-        sorted_nodes = list(nx.topological_sort(sg))
-        needs_rerun = True
-        while needs_rerun:
-            needs_rerun = asyncio.run(self._build(sorted_nodes))
-
-    async def _build(self, sorted_nodes):
-        required_resources = set()
-        for asset in sorted_nodes:
-            required_resources.update(asset.resources)
-        if not self._initialize_resources(required_resources):
-            return
-
-        # loop over assets, refresh and build
-        task_map = {}
-        for asset in sorted_nodes:
-            coroutine = self._refresh_asset(asset)
-            _task = asyncio.create_task(wait_for_dependencies(coroutine, [task_map[a] for a in self.graph.predecessors(asset)]))
-            coroutine = self._build_asset(asset)
-            task = asyncio.create_task(wait_for_dependencies(coroutine, [_task]))
-            task_map[asset] = task
-
-        all_successful = True
-        workers_to_notify = {}
-        for asset in sorted_nodes:
-            build_result = await task_map[asset]
-            all_successful = all_successful and (build_result != BuildResult.Failed)
-            if build_result == BuildResult.Rebuilt:
-                for worker in self.workers:
-                    if asset in worker.watched_assets:
-                        workers_to_notify.add(worker)
-
-        self._cleanup_resources(required_resources)
-
-        summary = self.summarize(display=False)
-        if not all_successful:
-            logger.info(f"Build failure occurred")
-            logger.error(summary, colorize=True)
-        else:
-            logger.info(f"Build successful")
-            logger.info(summary, colorize=True)
-
-        if len(workers_to_notify) > 0:
-            logger.info(f"Build triggered graph workers. Restructuring...")
-            any_changed = False
-            for worker in workers_to_notify:
-                logger.info(f"Running graph worker {worker}")
-                changed = worker.restructure(self.graph)
-                any_changed = any_changed or changed
-            if any_changed:
-                logger.info(f"Graph structure changed. Triggering rebuild...")
+    async def _build(self, assets = None):
+        while True: # keep rebuilding until graph structure doesn't change
+            if not assets:
+                logger.info(f"Building all assets")
+                sorted_nodes = list(nx.topological_sort(self.graph))
             else:
-                logger.info(f"Graph structure unchanged. No rebuild necessary")
-            return any_changed
-        else:
-            logger.info(f"No graph workers triggered during build.")
-            return False
+                logger.info(f"Building assets upstream of (and including) {assets}")
+                if isinstance(assets, Asset):
+                    assets = [assets]
+                nodes_to_build = []
+                for asset in assets:
+                    nodes_to_build.append(asset)
+                    nodes_to_build.extend(nx.ancestors(self.graph, asset))
+                sg = self.graph.subgraph(nodes_to_refresh)
+                sorted_nodes = list(nx.topological_sort(sg))
+
+            required_resources = set()
+            for asset in sorted_nodes:
+                required_resources.update(asset.resources)
+            if not self._initialize_resources(required_resources):
+                return
+
+            # loop over assets, refresh and build
+            task_map = {}
+            for asset in sorted_nodes:
+                coroutine = self._refresh_asset(asset)
+                _task = asyncio.create_task(wait_for_dependencies(coroutine, [task_map[a] for a in self.graph.predecessors(asset)]))
+                coroutine = self._build_asset(asset)
+                task = asyncio.create_task(wait_for_dependencies(coroutine, [_task]))
+                task_map[asset] = task
+
+            all_successful = True
+            workers_to_notify = {}
+            for asset in sorted_nodes:
+                build_result = await task_map[asset]
+                all_successful = all_successful and (build_result != BuildResult.Failed)
+                if build_result == BuildResult.Rebuilt:
+                    for worker in self.workers:
+                        if asset in worker.watched_assets:
+                            workers_to_notify.add(worker)
+
+            self._cleanup_resources(required_resources)
+
+            summary = self.summarize(display=False)
+            if not all_successful:
+                logger.info(f"Build failure occurred")
+                logger.error(summary, colorize=True)
+            else:
+                logger.info(f"Build successful")
+                logger.info(summary, colorize=True)
+
+            if len(workers_to_notify) > 0:
+                logger.info(f"Build triggered graph workers. Restructuring...")
+                new_assets = []
+                for worker in workers_to_notify:
+                    logger.info(f"Running graph worker {worker}")
+                    new_assets.append(worker.restructure(self.graph))
+                if len(new_assets) > 0:
+                    logger.info(f"Graph structure changed. Triggering build of new assets...")
+                    assets = new_assets
+                else:
+                    logger.info(f"No new assets added to graph. No rebuild necessary")
+                    break
+            else:
+                logger.info(f"No graph workers triggered during build.")
+                break
+        logger.info(f"Build complete.")
+
+
 
     async def _refresh_asset(self, asset):
         # Status refresh propagates using the following cascade of rules:
