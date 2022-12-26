@@ -414,6 +414,7 @@ class AssetGraph:
         return
 
     async def _build(self, assets = None):
+        workers_notified = False
         while True: # keep rebuilding until graph structure doesn't change
             if not assets:
                 logger.info(f"Building all assets")
@@ -466,6 +467,7 @@ class AssetGraph:
 
             if len(workers_to_notify) > 0:
                 logger.info(f"Build triggered graph workers. Restructuring...")
+                workers_notified = True
                 new_assets = []
                 for worker in workers_to_notify:
                     logger.info(f"Running graph worker {worker}")
@@ -474,14 +476,25 @@ class AssetGraph:
                     logger.info(f"Graph structure changed. Triggering build of new assets...")
                     assets = new_assets
                 else:
-                    logger.info(f"No new assets added to graph. No rebuild necessary")
+                    logger.info(f"No new assets added to graph. No rebuild necessary.")
                     break
             else:
-                logger.info(f"No graph workers triggered during build.")
+                logger.info(f"No graph workers triggered during build. No rebuild necessary.")
                 break
+
+        if workers_notified:
+            logger.info(f"Workers ran; removing any invalid schedules")
+            found_invalid = False
+            for sk in self.schedules:
+                asset = self.schedules[sk].kwargs["assets"]
+                if asset is not None and asset not in self.graph:
+                    logger.warning(f"Asset {asset} no longer in graph after workers, but schedule {sk} ({self.schedules[sk]}) on it; removing")
+                    self.unschedule(sk)
+                    found_invalid = True
+            if not found_invalid:
+                logger.info(f"No invalid schedules found.")
+
         logger.info(f"Build complete.")
-
-
 
     async def _refresh_asset(self, asset):
         # Status refresh propagates using the following cascade of rules:
