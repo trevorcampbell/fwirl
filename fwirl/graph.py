@@ -12,6 +12,7 @@ import asyncio
 from enum import Enum
 from queue import Queue as ThreadSafeQueue, Empty
 from threading import Thread
+from coolname import generate_slug
 
 class ShutdownSignal(Exception):
     pass
@@ -23,6 +24,7 @@ class BuildResult(Enum):
 
 __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 __MESSAGE_TTL__ = 1
+
 
 _NODE_COLORS = {AssetStatus.Current : "tab:green",
                 AssetStatus.Stale : "khaki",
@@ -192,6 +194,13 @@ class AssetGraph:
             return None
         return msg
 
+    def _send_message(self, schedule_key, msg):
+        exch = Exchange('fwirl', 'direct', durable=False)
+        queue = Queue(self.key+"-"+schedule_key, exchange=exch, routing_key=self.key+"-"+schedule_key, message_ttl = 1., auto_delete=True)
+        with Connection(__RABBIT_URL__) as conn:
+            producer = conn.Producer()
+            producer.publish(msg, exchange=exch, routing_key = self.key+"-"+schedule_key, declare=[queue])
+
     def _process_message(self, msg):
         if msg["type"] == "summarize":
             self.summarize()
@@ -275,61 +284,74 @@ class AssetGraph:
             logger.info(f"Caught shutdown signal; stopping main loop of asset graph {self.key}")
         th.join()
 
-    # TODO implement job priority as 3rd tuple element in job queue; sort by priority first (allows jumping the queue for summarize, pause, etc)
     async def _run(self):
         job_queue = []
         job_running = []
         message_task = None
         while True:
             # remove paused schedules from job queue   
-            job_queue = filter(lambda s: not self.schedules[s[0]].is_paused(), job_queue)
-            # add all occurrences of each scheduled job onto the queue between the most recent one on the queue and the next future one
+            job_queue = filter(lambda job: not self.schedules[job[0]].is_paused(), job_queue)
             for sk in self.schedules:
-                # get the latest current scheduled time for this schedule, or now if none scheduled
-                times_for_sk = [job[1] for job in job_queue if job[0] == sk]
-                if len(times_for_sk) > 0:
-                    latest = max(times_for_sk)
+                if self.schedules[sk].next() == Schedule.IMMEDIATE:
+                    # if the immediate job is already in the queue, just skip; otherwise add it
+                    if sk not in [job[0] for job in job_queue]:
+                        job_queue.put((sk, Schedule.IMMEDIATE))
                 else:
-                    latest = plm.now()
-                # loop over runs starting from most recent one on the queue until the next one after the current time, adding all
-                if not self.schedules[sk].is_paused():
-                    while latest < plm.now() and (self.schedules[sk].next(dt = latest) is not None):
+                    # add all occurrences of each scheduled job onto the queue between the most recent one on the queue and the next future one
+                    # get the latest current scheduled time for this schedule, or now if none scheduled
+                    times_for_sk = [job[1] for job in job_queue if job[0] == sk]
+                    if len(times_for_sk) > 0:
+                        latest = max(times_for_sk)
+                    else:
+                        latest = plm.now() 
+                    # loop over runs starting from most recent one on the queue until the next one after the current time, adding all 
+                    while (not self.schedules[sk].is_paused()) and (latest <= plm.now()) and (self.schedules[sk].next(dt = latest) is not None):
                         new_time = latest + plm.duration(seconds = self.schedules[sk].next(dt = latest))
                         job_queue.put((sk, new_time))
                         latest = new_time
 
-            # sort jobs by time
+            # sort upcoming jobs by scheduled time
             job_queue.sort(key = lambda job : job[1])
 
             # loop through scheduled jobs from earliest
             # run each one until one would be incompatible with currently running
+            # don't run multiple copies of the same schedule (otherwise if they're all read-only, we'd infinite loop)
             # if any jobs are running, wait indefinitely on message queue
             # if no jobs are running, wait until next job
             running_keys = [j[0] for j in job_running]
-            running_jobs_modify_graph = any([self.schedules[sk].modifies_graph for sk in running_keys])
+            running_jobs_modify_graph = any([j[1].modifies_graph for j in job_running])
             while len(job_queue) > 0 and job_queue[0][1] < plm.now():
-                if running_jobs_modify_graph and self.schedules[job_queue[0][0]].modifies_graph:
+                if (running_jobs_modify_graph and self.schedules[job_queue[0][0]].modifies_graph) or (job_queue[0][0] in running_keys):
                     break
                 # pop the next job
-                next_sk, next_time = schedule_queue.pop(0)
+                next_sk, next_time = job_queue.pop(0)
                 
-                # check if it's late (30 second window)
-                logger.info(f"Running event {next_sk} ({self.schedules[next_sk]}) scheduled for {next_time} now")
-                if next_time + plm.duration(seconds=30) < plm.now():
-                    logger.warning(f"Scheduled event {next_sk} is late; supposed to run at {next_time}, time now {plm.now()}")
-                    logger.warning(f"Job queue currently has length {len(job_queue)}")
+                if next_time == Schedule.IMMEDIATE:
+                    logger.info(f"Running event {next_sk} ({self.schedules[next_sk]}) immediately")
+                else:
+                    # check if it's late (30 second window)
+                    logger.info(f"Running event {next_sk} ({self.schedules[next_sk]}) scheduled for {next_time} now")
+                    if next_time + plm.duration(seconds=30) < plm.now():
+                        logger.warning(f"Scheduled event {next_sk} is late; supposed to run at {next_time}, time now {plm.now()}")
+                        logger.warning(f"Job queue currently has length {len(job_queue)}")
                 
-                # run the job TODO
+                # run the job
                 task = asyncio.create_task(self.schedules[next_sk].generate_coroutine())
-                job_running.append((next_sk, task)) 
-                
+                job_running.append((next_sk, self.schedules[next_sk], generate_slug(2), task)) 
+
+                # if it was an immediate job, remove the schedule
+                if next_time == Schedule.IMMEDIATE:
+                    self.schedules.pop(next_sk)
+ 
             # if no message task is running, start one
             if message_task is None:
                 # if jobs are running, just wait indefinitely for next message
                 # if no jobs are running, wait for next job
                 timeout = None
-                if len(job_running) == 0 and len(job_queue) > 0:
-                    timeout = (job_queue[0][1] - plm.now()).seconds
+                if len(job_running) == 0 and len(job_queue) > 0: 
+                    timeout = (job_queue[0][1] - plm.now()).seconds 
+                    #note: job_queue[0][1] should never be IMMEDIATE here, but if it somehow is, assert
+                    assert job_queue[0][1] != Schedule.IMMEDIATE
                 message_task = asyncio.create_task(asyncio.to_thread(self._get_message, timeout))
 
             # wait for next proc
@@ -343,10 +365,11 @@ class AssetGraph:
             
             # loop over jobs that ran, push any response messages onto the response queue, and clear out completed tasks
             for job in job_running:
-                if job.done():
-                    res = await job
-                    # TODO do something with res
-            job_running = filter(lambda j : not j.done(), job_running)
+                if job[3].done():
+                    res = await job[3]
+                    if job[1].next() == Schedule.IMMEDIATE:
+                        self._send_message(job[0], res)
+            job_running = filter(lambda j : not j[3].done(), job_running)
 
 
     def _initialize_resources(self, resources):
