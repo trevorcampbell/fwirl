@@ -116,23 +116,29 @@ class AssetGraph:
         #self._stale_topological_sort = True
         logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
 
-    def list_assets(self):
+    def list_assets(self, display=True):
+        s = ''
         if self.graph.number_of_nodes() == 0:
-            logger.info(f"No assets to list.")
+            s += "No assets to list."
         else:
-            s = "Assets:\n"
+            s += "Assets:\n"
             for asset in self.graph:
                 s += f"- {asset.key}: {fmt(asset.status)}\n"
+        if display:
             logger.info(s)
+        return s
 
-    def list_schedules(self):
+    def list_schedules(self, display=True):
+        s = ''
         if len(self.schedules) == 0:
-            logger.info(f"No schedules to list.")
+            s += "No schedules to list."
         else:
-            s = "Schedules:\n"
+            s += "Schedules:\n"
             for sch in self.schedules:
                 s += f"- {sch}: {self.schedules[sch]}"
+        if display:
             logger.info(s)
+        return s
 
     def schedule(self, schedule_key, action, cron_string, asset = None):
         logger.info(f"Adding new schedule with key {schedule_key}")
@@ -355,7 +361,7 @@ class AssetGraph:
                 message_task = asyncio.create_task(asyncio.to_thread(self._get_message, timeout))
 
             # wait for next proc
-            await asyncio.wait(job_running + [message_task],  return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait([j[3] for j in job_running] + [message_task],  return_when=asyncio.FIRST_COMPLETED)
 
             # if the message task is done, process it
             if message_task.done():
@@ -363,12 +369,10 @@ class AssetGraph:
                 self._process_msg(msg)
                 message_task = None
             
-            # loop over jobs that ran, push any response messages onto the response queue, and clear out completed tasks
+            # loop over jobs that ran and clear out completed tasks
             for job in job_running:
                 if job[3].done():
                     res = await job[3]
-                    if job[1].next() == Schedule.IMMEDIATE:
-                        self._send_message(job[0], res)
             job_running = filter(lambda j : not j[3].done(), job_running)
 
 
