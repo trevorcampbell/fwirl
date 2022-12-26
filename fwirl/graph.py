@@ -256,7 +256,7 @@ class AssetGraph:
         # run the message handling loop
         # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
         logger.info(f"Starting fwirl messaging loop")
-        th = Thread(name = "fwirl_messaging_loop", target=self._message_wait, args=None)
+        th = Thread(name = "fwirl_messaging_loop", target=self._message_wait, args=None, daemon=True)
         th.start()
 
         logger.info(f"Starting fwirl job event loop")
