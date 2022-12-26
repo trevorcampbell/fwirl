@@ -3,7 +3,7 @@ from kombu import Connection, Exchange, Queue
 __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 __EXCH_NAME__ = "fwirl"
 
-class FlagContainer:
+class StopFlag:
     def __init__(self):
         flag=False
 
@@ -12,17 +12,20 @@ def _get_exch_queue(key):
     queue = Queue(key, exchange=exch, routing_key=key, message_ttl = 1., auto_delete=True)
     return exch, queue
 
-def _push_handler(queue, body, message):
+def _push_handler(queue, stop, body, message):
     message.ack()
     queue.put(body)
+    if body["type"] == "shutdown":
+        stop.flag = True
 
 def listen(key, handler_queue):
     exch, queue = _get_exch_queue(key)
+    stop = StopFlag()
     with Connection(__RABBIT_URL__) as conn:
-        with conn.Consumer(queue, callbacks=[lambda  b, m : _push_handler(handler_queue, b, m)]):
+        with conn.Consumer(queue, callbacks=[lambda  b, m : _push_handler(handler_queue, stop, b, m)]):
             while True:
                 conn.drain_events()
-                if any([msg["type"] == "shutdown" for msg in handler_queue]):
+                if stop.flag:
                     break
 
 def get(key, handler_queue):
@@ -31,7 +34,6 @@ def get(key, handler_queue):
         with conn.Consumer(queue, callbacks=[lambda  b, m : _push_handler(handler_queue, b, m)]):
             conn.drain_events()
     
-
 def publish(key, body):
     exch, queue = _get_exch_queue(key)
     with Connection(__RABBIT_URL__) as conn:
