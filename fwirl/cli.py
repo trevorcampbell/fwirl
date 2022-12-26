@@ -63,8 +63,6 @@ def unpause(graph, key, rabbit_url):
     api_unpause(graph, key, rabbit_url)
 cli.add_command(pause)
 
-
-
 @click.command()
 @click.argument("graph")
 @click.argument("schedule")
