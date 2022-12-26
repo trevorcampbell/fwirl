@@ -13,12 +13,14 @@ def _get_exch_queue(key):
     return exch, queue
 
 def _push_handler(queue, stop, body, message):
+    logger.info(f"Messaging: received {body['type']} message")
+    logger.debug(f"Message body: {body}")
     message.ack()
     queue.put(body)
     if body["type"] == "shutdown":
         stop.flag = True
 
-def listen(key, handler_queue):
+def listen(key, handler_queue, url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(key)
     stop = StopFlag()
     with Connection(__RABBIT_URL__) as conn:
@@ -28,13 +30,14 @@ def listen(key, handler_queue):
                 if stop.flag:
                     break
 
-def get(key, handler_queue):
+def get_msg(key, handler_queue, url = __RABBIT_URL__):
+    stop = StopFlag()
     exch, queue = _get_exch_queue(key)
     with Connection(__RABBIT_URL__) as conn:
-        with conn.Consumer(queue, callbacks=[lambda  b, m : _push_handler(handler_queue, b, m)]):
+        with conn.Consumer(queue, callbacks=[lambda  b, m : _push_handler(handler_queue, stop, b, m)]):
             conn.drain_events()
     
-def publish(key, body):
+def publish_msg(key, body, url = __RABBIT_URL__):
     exch, queue = _get_exch_queue(key)
     with Connection(__RABBIT_URL__) as conn:
         producer = conn.Producer()

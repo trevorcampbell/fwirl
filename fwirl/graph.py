@@ -13,6 +13,7 @@ from enum import Enum
 from queue import Queue as ThreadSafeQueue, Empty
 from threading import Thread
 from coolname import generate_slug
+from .message import publish_msg, listen
 
 class ShutdownSignal(Exception):
     pass
@@ -174,25 +175,6 @@ class AssetGraph:
         asset.status = AssetStatus.Stale
         self.refresh_downstream(asset)
 
-    def _on_message(self, body, message):
-        logger.info(f"Message loop: received {body['type']} message")
-        logger.debug(f"Message body: {body}")
-        message.ack()
-        self.message_queue.put(body)
-        if body["type"] == "shutdown":
-            self._stop_messaging_flag = True
-
-    def _message_wait(self):
-        exchange = Exchange('fwirl', 'direct', durable = False)
-        queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
-        with Connection(__RABBIT_URL__) as conn:
-            with conn.Consumer(queue, callbacks=[self._on_message]):
-                while True:
-                    conn.drain_events()
-                    if self._stop_messaging_flag:
-                        self._stop_messaging_flag = False
-                        break
- 
     def _get_message(self, timeout):
         try:
             msg = self.message_queue.get(timeout=timeout)
@@ -200,22 +182,18 @@ class AssetGraph:
             return None
         return msg
 
-    def _send_message(self, schedule_key, msg):
-        exch = Exchange('fwirl', 'direct', durable=False)
-        queue = Queue(self.key+"-"+schedule_key, exchange=exch, routing_key=self.key+"-"+schedule_key, message_ttl = 1., auto_delete=True)
-        with Connection(__RABBIT_URL__) as conn:
-            producer = conn.Producer()
-            producer.publish(msg, exchange=exch, routing_key = self.key+"-"+schedule_key, declare=[queue])
-
     def _process_message(self, msg):
         if msg["type"] == "summarize":
-            self.summarize()
+            resp = self.summarize(display=False)
+            publish_msg(self.key, resp)
 
         if msg["type"] == "ls":
+            resp = ''
             if msg["assets"]:
-                self.list_assets()
+                resp += self.list_assets(display=False)
             if msg["schedules"]:
-                self.list_schedules()
+                resp += '\n' + self.list_schedules(display=False)
+            publish_msg(self.key, resp)
 
         if msg["type"] == "build":
             asset = None
@@ -271,7 +249,7 @@ class AssetGraph:
         # run the message handling loop
         # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
         logger.info(f"Starting fwirl messaging loop")
-        th = Thread(name = "fwirl_messaging_loop", target=self._message_wait, args=None, daemon=True)
+        th = Thread(name = "fwirl_messaging_loop", target=listen, args=(self.key, self.message_queue,), daemon=True)
         th.start()
 
         logger.info(f"Starting fwirl job event loop")
@@ -280,11 +258,7 @@ class AssetGraph:
             asyncio.run(self._run())
         except KeyboardInterrupt:
             logger.info(f"Caught keyboard interrupt; stopping main loop and messaging loop of asset graph {self.key}")
-            exchange = Exchange('fwirl', 'direct', durable = False)
-            queue = Queue(self.key, exchange=exchange, routing_key = self.key, message_ttl = 1., auto_delete=True)
-            with Connection(__RABBIT_URL__) as conn:
-                producer = conn.Producer()
-                producer.publish({"type": "shutdown"}, exchange=exchange, routing_key = self.key, declare=[queue])
+            publish_msg(self.key, {"type": "shutdown"})
         except ShutdownSignal:
             # this only happens if the messaging loop got the "shutdown" message, so it is already shutting itself down, no need to publish shutdown msg
             logger.info(f"Caught shutdown signal; stopping main loop of asset graph {self.key}")
