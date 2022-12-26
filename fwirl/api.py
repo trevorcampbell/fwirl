@@ -9,12 +9,15 @@ def summarize(graph_key, rabbit_url = __RABBIT_URL__):
     get_msg(resp_name, queue, rabbit_url)
     print(queue[0])
 
+# TODO list jobs
 def ls(graph_key, assets = False, schedules = False, rabbit_url = __RABBIT_URL__):
     resp_name = 'ls-'+generate_slug(2)
     publish_msg(graph_key, {"type": "ls", "resp_queue": resp_name, "assets" : assets, "schedules" : schedules}, rabbit_url) 
     queue = []
     get_msg(resp_name, queue, rabbit_url)
     print(queue[0])
+
+# TODO cancel
 
 def refresh(graph_key, asset_key = None, rabbit_url = __RABBIT_URL__):
     publish_msg(graph_key, {"type": "refresh", "asset_key" : asset_key}, rabbit_url)
