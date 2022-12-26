@@ -125,7 +125,24 @@ class AssetGraph:
         else:
             s += "Schedules:\n"
             for sch in self.schedules:
-                s += f"- {sch}: {self.schedules[sch]}"
+                s += f"- {sch}: {self.schedules[sch]}\n"
+        if display:
+            logger.info(s)
+        return s
+
+    def list_jobs(self, display=True):
+        s = ''
+        if self.job_running is None:
+            s += 'No running job.\n'
+        else:
+            s += f'Running job: {self.job_running}\n'
+
+        if len(self.job_queue) == 0:
+            s += "No jobs to list."
+        else:
+            s += "Jobs:\n"
+            for j in self.job_queue:
+                s += f"- {j}\n"
         if display:
             logger.info(s)
         return s
@@ -192,6 +209,8 @@ class AssetGraph:
                 resp += self.list_assets(display=False)
             if msg["schedules"]:
                 resp += '\n' + self.list_schedules(display=False)
+            if msg["jobs"]:
+                resp += '\n' + self.list_jobs(display=False)
             publish_msg(msg["resp_queue"], resp)
 
         if msg["type"] == "pause":
