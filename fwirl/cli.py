@@ -7,9 +7,7 @@ from .api import summarize as api_summarize,
                  unpause as api_unpause,
                  schedule as api_schedule,
                  unschedule as api_unschedule
-
-
-__RABBIT_URL__ = "amqp://guest:guest@localhost//"
+from .message import __RABBIT_URL__
 
 @click.group()
 def cli():
@@ -26,9 +24,10 @@ cli.add_command(summarize)
 @click.argument("graph")
 @click.option("--assets", is_flag=True, default=False)
 @click.option("--schedules", is_flag=True, default=False)
+@click.option("--jobs", is_flag=True, default=False)
 @click.option("--rabbit_url", default=__RABBIT_URL__)
-def ls(graph, assets, schedules, rabbit_url):
-    api_ls(graph, assets, schedules, rabbit_url)
+def ls(graph, assets, schedules, jobs, rabbit_url):
+    api_ls(graph, assets, schedules, jobs, rabbit_url)
 cli.add_command(ls)
 
 @click.command()
@@ -63,8 +62,6 @@ def unpause(graph, key, rabbit_url):
     api_unpause(graph, key, rabbit_url)
 cli.add_command(pause)
 
-
-
 @click.command()
 @click.argument("graph")
 @click.argument("schedule")
@@ -83,9 +80,4 @@ cli.add_command(schedule)
 def unschedule(graph, schedule, rabbit_url):
     api_unschedule(graph, schedule, rabbit_url)
 cli.add_command(unschedule)
-
-@click.command()
-def clear_failure():
-    click.echo("Clearing failure!")
-cli.add_command(clear_failure)
 
