@@ -34,4 +34,3 @@ def schedule(graph_key, schedule_key, action, cron_str, asset_key=None, rabbit_u
 def unschedule(graph_key, schedule_key, rabbit_url = __RABBIT_URL__):
     publish_msg(graph_key, {"type": "unschedule", "schedule_key" : schedule_key}, rabbit_url)
     
-# TODO cancel job
