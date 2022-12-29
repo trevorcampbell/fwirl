@@ -210,7 +210,7 @@ class AssetGraph:
             if msg["assets"]:
                 resp += self.list_assets(display=False) + ('\n' if msg["jobs"] or msg["schedules"] else '')
             if msg["schedules"]:
-                resp += self.list_schedules(display=False) + ('\n' if msg["jobs"])
+                resp += self.list_schedules(display=False) + ('\n' if msg["jobs"] else '')
             if msg["jobs"]:
                 resp += self.list_jobs(display=False) 
             resp_msg = {'type' : 'response', 'response': resp}
