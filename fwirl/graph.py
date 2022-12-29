@@ -70,6 +70,7 @@ class AssetGraph:
         self.message_queue = ThreadSafeQueue()
         self.job_queue = []
         self.job_running = None
+        self.workers = []
 
     def add_assets(self, assets):
         logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")

@@ -1,6 +1,6 @@
 import pendulum as plm
 from coolname import generate_slug
-from .message import get_msg, publish_msg, listen
+from .message import get_msg, publish_msg, listen, __RABBIT_URL__
 
 def summarize(graph_key, rabbit_url = __RABBIT_URL__):
     resp_name = 'summarize-'+generate_slug(2)
