@@ -1,11 +1,12 @@
 from kombu import Connection, Exchange, Queue
+from loguru import logger
 
 __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 __EXCH_NAME__ = "fwirl"
 
 class StopFlag:
     def __init__(self):
-        flag=False
+        self.flag=False
 
 def _get_exch_queue(key):
     exch = Exchange(__EXCH_NAME__, 'direct', durable=False)

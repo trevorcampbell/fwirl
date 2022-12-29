@@ -202,17 +202,19 @@ class AssetGraph:
 
         if msg["type"] == "summarize":
             resp = self.summarize(display=False)
-            publish_msg(msg["resp_queue"], resp)
+            resp_msg = {'type': 'response', 'response': resp}
+            publish_msg(msg["resp_queue"], resp_msg)
 
         if msg["type"] == "ls":
             resp = ''
             if msg["assets"]:
-                resp += self.list_assets(display=False)
+                resp += self.list_assets(display=False) + ('\n' if msg["jobs"] or msg["schedules"] else '')
             if msg["schedules"]:
-                resp += '\n' + self.list_schedules(display=False)
+                resp += self.list_schedules(display=False) + ('\n' if msg["jobs"])
             if msg["jobs"]:
-                resp += '\n' + self.list_jobs(display=False)
-            publish_msg(msg["resp_queue"], resp)
+                resp += self.list_jobs(display=False) 
+            resp_msg = {'type' : 'response', 'response': resp}
+            publish_msg(msg["resp_queue"], resp_msg)
 
         if msg["type"] == "pause":
             asset = None
@@ -281,7 +283,7 @@ class AssetGraph:
         message_task = None
         while True:
             # remove paused schedules from job queue   
-            self.job_queue = filter(lambda job: not self.schedules[job[0]].is_paused(), self.job_queue)
+            self.job_queue = [job for job in self.job_queue if not self.schedules[job[0]].is_paused()] 
             for sk in self.schedules:
                 if self.schedules[sk].next() == Schedule.IMMEDIATE:
                     # if the immediate job is already in the queue, just skip; otherwise add it
@@ -340,7 +342,7 @@ class AssetGraph:
                 message_task = asyncio.create_task(asyncio.to_thread(self._get_message, timeout))
 
             # wait for next proc
-            await asyncio.wait([self.job_running[3], message_task],  return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait([self.job_running[3], message_task] if self.job_running is not None else [message_task],  return_when=asyncio.FIRST_COMPLETED)
 
             # if the message task is done, process it
             if message_task.done():
@@ -349,9 +351,9 @@ class AssetGraph:
                 message_task = None
             
             # if the job is done, clear it
-            if self.job_running[3].done():
+            if self.job_running is not None and self.job_running[3].done():
                 res = await self.job_running[3]
-            self.job_running = None
+                self.job_running = None
 
     def _initialize_resources(self, resources):
         logger.info(f"Initializing {len(resources)} build resources")
