@@ -1,11 +1,19 @@
 import fwirl
 
 
-#fwirl.summarize("test_graph")
 
 
 fwirl.ls("test_graph", False, True)
 
+fwirl.ls("test_graph", True, False)
+
+fwirl.ls("test_graph", False, True, True)
+
+fwirl.summarize("test_graph")
+
+fwirl.shutdown("test_graph")
+
+#fwirl.summarize("test_graph")
 
 #fwirl.ls("test_graph", False, True)
 #fwirl.schedule("test_graph", "blah", "refresh", "* * * * *")
@@ -15,7 +23,6 @@ fwirl.ls("test_graph", False, True)
 #fwirl.unschedule("test_graph", "blah")
 #fwirl.ls("test_graph", False, True)
 #fwirl.schedule("test_graph", "blah", "refresh", "* * * * *", "Reliable")
-fwirl.ls("test_graph", True, False)
 
 
 #fwirl.pause("test_graph", asset="blah")

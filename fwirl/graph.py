@@ -14,6 +14,8 @@ from queue import Queue as ThreadSafeQueue, Empty
 from threading import Thread
 from coolname import generate_slug
 from .message import publish_msg, listen
+import signal
+
 
 class ShutdownSignal(Exception):
     pass
@@ -260,7 +262,17 @@ class AssetGraph:
                     asset = _asset
             self.schedule(schedule_key, "refresh", '', asset = asset, immediate_once = True)
 
+        if msg["type"] == "shutdown":
+            raise ShutdownSignal
+
     def run(self):
+        # change the default sigint handler (which does not behave well with the use of asyncio.to_thread below
+        _original_sigint_handler = signal.getsignal(signal.SIGINT)
+        def _sigint_handler(sig, frame):
+            self.message_queue.put(0) # wake up the message queue thread
+            raise KeyboardInterrupt # then raise the interrupt
+        signal.signal(signal.SIGINT, _sigint_handler)
+
         # run the message handling loop
         # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
         logger.info(f"Starting fwirl messaging loop")
@@ -278,6 +290,8 @@ class AssetGraph:
             # this only happens if the messaging loop got the "shutdown" message, so it is already shutting itself down, no need to publish shutdown msg
             logger.info(f"Caught shutdown signal; stopping main loop of asset graph {self.key}")
         th.join()
+        # restore the original sigint handler
+        signal.signal(signal.SIGINT, _original_sigint_handler)
 
     async def _run(self):
         message_task = None
@@ -652,6 +666,7 @@ class AssetGraph:
 
     def summarize(self, display=True):
         groupings = self._collect_groups()
+        logger.debug("Generating summary")
         summary = f"\nAsset Graph Summary\n-------------------\nAssets: {self.graph.number_of_nodes()}\n"
         for status in AssetStatus:
             summary += f"    {fmt(status)}: {sum([a.status == status for a in self.graph])} assets\n"
@@ -697,6 +712,7 @@ class AssetGraph:
                         summary += f"            {asset} : {fmt(asset.status)}\n"
         if display:
             logger.info(summary, colorize=True)
+        logger.debug("Done generating summary")
         return summary
 
 

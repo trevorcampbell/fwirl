@@ -25,6 +25,9 @@ def ls(graph_key, assets = False, schedules = False, jobs = False, rabbit_url = 
         quit()
     print(queue.get()['response'])
 
+def shutdown(graph_key, rabbit_url = __RABBIT_URL__):
+    publish_msg(graph_key, {"type": "shutdown"}, rabbit_url) 
+
 def refresh(graph_key, asset_key = None, rabbit_url = __RABBIT_URL__):
     publish_msg(graph_key, {"type": "refresh", "asset_key" : asset_key}, rabbit_url)
 
