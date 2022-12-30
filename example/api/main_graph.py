@@ -7,12 +7,12 @@ class ReliableAsset(fwirl.Asset):
         self._built = False
         super(ReliableAsset,self).__init__(key, dependencies, resources, group, subgroup)
 
-    def build(self):
+    async def build(self):
         self._built = True
         self._ts = plm.now()
         return 3
 
-    def timestamp(self):
+    async def timestamp(self):
         return self._ts if self._built else fwirl.AssetStatus.Unavailable
 
 class UnreliableAsset(fwirl.Asset):
@@ -20,7 +20,7 @@ class UnreliableAsset(fwirl.Asset):
         self._built = False
         super(UnreliableAsset,self).__init__(key, dependencies, resources, group, subgroup)
 
-    def build(self):
+    async def build(self):
         # with P = 0.4, the asset is created successfully
         # with P = 0.3, the asset build fails before creation
         # with P = 0.3, the asset build fails after creation
@@ -36,7 +36,7 @@ class UnreliableAsset(fwirl.Asset):
             raise Exception
         return 3
 
-    def timestamp(self):
+    async def timestamp(self):
         return self._ts if self._built else fwirl.AssetStatus.Unavailable
 
 # dependencies: Reliable -> Unreliable -> Reliable
