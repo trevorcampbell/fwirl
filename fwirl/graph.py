@@ -15,6 +15,7 @@ from threading import Thread
 from coolname import generate_slug
 from .message import publish_msg, listen
 import signal
+import inspect
 
 
 class ShutdownSignal(Exception):
@@ -98,6 +99,14 @@ class AssetGraph:
         new_nodes = self.graph.number_of_nodes()
         #self._stale_topological_sort = True
         logger.info(f"Added {new_edges-old_edges} unique edges and {new_nodes-old_nodes} unique assets to the graph")
+        logger.info(f"Verifying that all assets have async timestamp and build functions")
+        for asset in self.graph:
+            if not inspect.iscoroutinefunction(asset.build):
+                logger.error(f"Asset {asset}'s build routine is not async. Please ensure that .build() and .timestamp() are asynchronous.")
+                raise ValueError
+            if not inspect.iscoroutinefunction(asset.timestamp):
+                logger.error(f"Asset {asset}'s timestamp routine is not async. Please ensure that .build() and .timestamp() are asynchronous.")
+                raise ValueError
 
     def remove_assets(self, assets):
         logger.info(f"Removing {len(assets)} assets and downstream assets from graph")
