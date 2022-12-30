@@ -46,7 +46,7 @@ g = fwirl.AssetGraph("test_graph")
 a = ReliableAsset("Reliable", [])
 li = []
 final = []
-for i in range(200):
+for i in range(20):
     a1 = ReliableAsset(f"Reliable1{i}", [a], group = 0, subgroup = i)
     a2 = UnreliableAsset(f"Unreliable{i}", [a1], group = 0, subgroup = i)
     a3 = ReliableAsset(f"Reliable2{i}", [a2], group = 0, subgroup = i)

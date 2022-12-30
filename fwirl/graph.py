@@ -253,14 +253,14 @@ class AssetGraph:
             for _asset in self.graph:
                 if _asset.key == msg["asset_key"]:
                     asset = _asset
-            self.schedule(schedule_key, "build", '', asset = asset, immediate_once = True)
+            self.schedule('immediate-build-'+generate_slug(2), "build", '', asset = asset, immediate_once = True)
 
         if msg["type"] == "refresh":
             asset = None
             for _asset in self.graph:
                 if _asset.key == msg["asset_key"]:
                     asset = _asset
-            self.schedule(schedule_key, "refresh", '', asset = asset, immediate_once = True)
+            self.schedule('immediate-refresh-'+generate_slug(2), "refresh", '', asset = asset, immediate_once = True)
 
         if msg["type"] == "shutdown":
             raise ShutdownSignal
@@ -302,7 +302,7 @@ class AssetGraph:
                 if self.schedules[sk].next() == Schedule.IMMEDIATE:
                     # if the immediate job is already in the queue, just skip; otherwise add it
                     if sk not in [job[0] for job in self.job_queue]:
-                        self.job_queue.put((sk, Schedule.IMMEDIATE))
+                        self.job_queue.append((sk, Schedule.IMMEDIATE))
                 else:
                     # add all occurrences of each scheduled job onto the queue between the most recent one on the queue and the next future one
                     # get the latest current scheduled time for this schedule, or now if none scheduled
@@ -314,7 +314,7 @@ class AssetGraph:
                     # loop over runs starting from most recent one on the queue until the next one after the current time, adding all 
                     while (not self.schedules[sk].is_paused()) and (latest <= plm.now()) and (self.schedules[sk].next(dt = latest) is not None):
                         new_time = latest + plm.duration(seconds = self.schedules[sk].next(dt = latest))
-                        self.job_queue.put((sk, new_time))
+                        self.job_queue.append((sk, new_time))
                         latest = new_time
 
             # sort upcoming jobs by scheduled time
@@ -336,7 +336,7 @@ class AssetGraph:
                 
                 # run the job
                 task = asyncio.create_task(self.schedules[next_sk].generate_coroutine())
-                self.job_running = (next_sk, self.schedules[next_sk], generate_slug(2), task) 
+                self.job_running = (next_sk, self.schedules[next_sk], 'job-'+generate_slug(2), task) 
 
                 # if it was an immediate job, remove the schedule
                 if next_time == Schedule.IMMEDIATE:
