@@ -1,4 +1,4 @@
-
+from abc import abstractmethod
 
 class GraphWorker:
     def __init__(self, watched_assets):
