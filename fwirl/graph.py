@@ -94,6 +94,7 @@ class AssetGraph:
         logger.info(f"Adding {len(edges)} edges, {len(assets)} assets, and upstream assets to the graph")
         old_edges = self.graph.size()
         old_nodes = self.graph.number_of_nodes()
+        self.graph.add_nodes_from(unq_assets)
         self.graph.add_edges_from(edges)
         new_edges = self.graph.size()
         new_nodes = self.graph.number_of_nodes()
