@@ -57,6 +57,7 @@ class ExternalAsset(Asset):
         self.last_poll = AssetStatus.Unavailable
         self._cached_timestamp = AssetStatus.Unavailable
         self._cached_val = AssetStatus.Unavailable
+        self._pending_val = None
         super(ExternalAsset,self).__init__(key, dependencies, resources=resources, group=group, subgroup=subgroup, allow_retry=allow_retry)
 
     # TODO also add a put method and allow this program to update the external resource
@@ -66,13 +67,19 @@ class ExternalAsset(Asset):
         if (self.last_poll == AssetStatus.Unavailable) or (plm.now() >= self.last_poll + self.min_polling_interval):
             val = await self.get()
             self.last_poll = plm.now()
+            # if there's a diff, flag the asset as stale and store the pending value
             if self.diff(val):
-                self._cached_val = val
-                self._cached_timestamp = plm.now()
+                self._pending_val = val
+                self.status = AssetStatus.Stale
         return self._cached_timestamp
 
     async def build(self):
-        pass
+        # if there's a pending value, move it into the cached value and update the timestamp
+        if self._pending_val is not None:
+            self._cached_val = self._pending_val
+            self._cached_timestamp = plm.now()
+            self._pending_val = None
+        return
 
     @abstractmethod
     async def get(self):
@@ -80,6 +87,5 @@ class ExternalAsset(Asset):
 
     @abstractmethod
     def diff(self, val):
-        # compare to self._cached_val
-        pass
+        pass # compare to self._cached_val
 
