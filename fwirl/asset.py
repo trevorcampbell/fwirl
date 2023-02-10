@@ -70,7 +70,8 @@ class ExternalAsset(Asset):
             # if there's a diff, flag the asset as stale and store the pending value
             if self.diff(val):
                 self._pending_val = val
-                self.status = AssetStatus.Stale
+                if self.status != AssetStatus.Unavailable:
+                    self.status = AssetStatus.Stale
         return self._cached_timestamp
 
     async def build(self):
