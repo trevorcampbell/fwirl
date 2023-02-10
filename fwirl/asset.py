@@ -63,7 +63,7 @@ class ExternalAsset(Asset):
     # TODO self.get error handling?
     # TODO store val/timestamp in a DB to record last poll/val to avoid rerunning flows unnecessarily if this program quits
     async def timestamp(self):
-        if (self.last_poll == AssetStatus.Unavailable) or (plm.now() >= self.last_poll + min_polling_interval):
+        if (self.last_poll == AssetStatus.Unavailable) or (plm.now() >= self.last_poll + self.min_polling_interval):
             val = self.get()
             self.last_poll = plm.now()
             if self.diff(val):
