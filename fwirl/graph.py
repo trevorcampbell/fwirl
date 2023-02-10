@@ -526,12 +526,13 @@ class AssetGraph:
     async def _refresh_asset(self, asset):
         # Status refresh propagates using the following cascade of rules:
         # 0. If I'm Failed and self.allow_retry = False, I'm Failed
-        # 0. If I'm Paused, I'm Paused
-        # 1. If any of my parents is Paused or UpstreamStopped or Failed, I'm UpstreamStopped.
-        # 2. If I don't exist, I'm Unavailable.
-        # 3. If any of my parents is Stale or Unavailable, I'm Stale
-        # 4. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
-        # 5. I'm Current
+        # 1. If I'm Paused, I'm Paused
+        # 2. If any of my parents is Paused or UpstreamStopped or Failed, I'm UpstreamStopped.
+        # 3. If I don't exist, I'm Unavailable.
+        # 4. If I'm Stale or Failed, I'm Stale.
+        # 4. If any of my parents is Stale or Unavailable, I'm Stale
+        # 5. All of my parents are Current. So check timestamps. If my timestamp is earlier than any of them, I'm Stale.
+        # 6. I'm Current
         logger.debug(f"Updating status for asset {asset}")
 
         if (not asset.allow_retry) and (asset.status == AssetStatus.Failed):
@@ -566,11 +567,22 @@ class AssetGraph:
             return
 
         timestamp = await asset.timestamp()
+        
         if timestamp == AssetStatus.Unavailable:
             asset.status = AssetStatus.Unavailable
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp unavailable)")
             return
 
+        if asset.status == AssetStatus.Stale:
+            asset.status = AssetStatus.Stale
+            logger.info(f"Asset {asset} status: {fmt(asset.status)} (previously marked stale)")
+            return
+       
+        if asset.status == AssetStatus.Failed:
+            asset.status = AssetStatus.Stale
+            logger.info(f"Asset {asset} status: {fmt(asset.status)} (previously failed but asset allows retries)")
+            return
+        
         if any_stale_unav:
             asset.status = AssetStatus.Stale
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent stale/unavailable)")
