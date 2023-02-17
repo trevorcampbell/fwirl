@@ -473,7 +473,7 @@ class AssetGraph:
                 task_map[asset] = task
 
             all_successful = True
-            workers_to_notify = {}
+            workers_to_notify = set()
             for asset in sorted_nodes:
                 build_result = await task_map[asset]
                 all_successful = all_successful and (build_result != BuildResult.Failed)
