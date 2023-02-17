@@ -224,7 +224,7 @@ class AssetGraph:
             if msg["schedules"]:
                 resp += self.list_schedules(display=False) + ('\n' if msg["jobs"] else '')
             if msg["jobs"]:
-                resp += self.list_jobs(display=False) 
+                resp += self.list_jobs(display=False)
             resp_msg = {'type' : 'response', 'response': resp}
             publish_msg(msg["resp_queue"], resp_msg)
 
@@ -306,8 +306,8 @@ class AssetGraph:
     async def _run(self):
         message_task = None
         while True:
-            # remove paused schedules from job queue   
-            self.job_queue = [job for job in self.job_queue if not self.schedules[job[0]].is_paused()] 
+            # remove paused schedules from job queue
+            self.job_queue = [job for job in self.job_queue if not self.schedules[job[0]].is_paused()]
             for sk in self.schedules:
                 if self.schedules[sk].next() == Schedule.IMMEDIATE:
                     # if the immediate job is already in the queue, just skip; otherwise add it
@@ -320,8 +320,8 @@ class AssetGraph:
                     if len(times_for_sk) > 0:
                         latest = max(times_for_sk)
                     else:
-                        latest = plm.now() 
-                    # loop over runs starting from most recent one on the queue until the next one after the current time, adding all 
+                        latest = plm.now()
+                    # loop over runs starting from most recent one on the queue until the next one after the current time, adding all
                     while (not self.schedules[sk].is_paused()) and (latest <= plm.now()) and (self.schedules[sk].next(dt = latest) is not None):
                         new_time = latest + plm.duration(seconds = self.schedules[sk].next(dt = latest))
                         self.job_queue.append((sk, new_time))
@@ -334,7 +334,7 @@ class AssetGraph:
             if len(self.job_queue) > 0 and (self.job_queue[0][1] < plm.now()) and (self.job_running is None):
                 # pop the next job
                 next_sk, next_time = self.job_queue.pop(0)
-                
+
                 if next_time == Schedule.IMMEDIATE:
                     logger.info(f"Running event {next_sk} ({self.schedules[next_sk]}) immediately")
                 else:
@@ -343,15 +343,15 @@ class AssetGraph:
                     if next_time + plm.duration(seconds=30) < plm.now():
                         logger.warning(f"Scheduled event {next_sk} is late; supposed to run at {next_time}, time now {plm.now()}")
                         logger.warning(f"Job queue currently has length {len(self.job_queue)}")
-                
+
                 # run the job
                 task = asyncio.create_task(self.schedules[next_sk].generate_coroutine())
-                self.job_running = (next_sk, self.schedules[next_sk], 'job-'+generate_slug(2), task) 
+                self.job_running = (next_sk, self.schedules[next_sk], 'job-'+generate_slug(2), task)
 
                 # if it was an immediate job, remove the schedule
                 if next_time == Schedule.IMMEDIATE:
                     self.schedules.pop(next_sk)
- 
+
             # if no message task is running, start one
             # if job is running, wait indefinitely on message queue
             # if no job is running, wait until next job
@@ -359,8 +359,8 @@ class AssetGraph:
                 # if jobs are running, just wait indefinitely for next message
                 # if no jobs are running, wait for next job
                 timeout = None
-                if (self.job_running is None) and len(self.job_queue) > 0: 
-                    timeout = (self.job_queue[0][1] - plm.now()).seconds 
+                if (self.job_running is None) and len(self.job_queue) > 0:
+                    timeout = (self.job_queue[0][1] - plm.now()).seconds
                     #note: self.job_queue[0][1] should never be IMMEDIATE here, but if it somehow is, assert
                     assert self.job_queue[0][1] != Schedule.IMMEDIATE
                 message_task = asyncio.create_task(asyncio.to_thread(self._get_message, timeout))
@@ -373,7 +373,7 @@ class AssetGraph:
                 msg = await message_task
                 self._process_message(msg)
                 message_task = None
-            
+
             # if the job is done, clear it
             if self.job_running is not None and self.job_running[3].done():
                 res = await self.job_running[3]
@@ -498,7 +498,7 @@ class AssetGraph:
                 new_assets = []
                 for worker in workers_to_notify:
                     logger.info(f"Running graph worker {worker}")
-                    new_assets.append(worker.restructure(self.graph))
+                    new_assets.append(await worker.restructure(self.graph))
                 if len(new_assets) > 0:
                     logger.info(f"Graph structure changed. Triggering build of new assets...")
                     assets = new_assets
@@ -567,7 +567,7 @@ class AssetGraph:
             return
 
         timestamp = await asset.timestamp()
-        
+
         if timestamp == AssetStatus.Unavailable:
             asset.status = AssetStatus.Unavailable
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (timestamp unavailable)")
@@ -577,12 +577,12 @@ class AssetGraph:
             asset.status = AssetStatus.Stale
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (previously marked stale)")
             return
-       
+
         if asset.status == AssetStatus.Failed:
             asset.status = AssetStatus.Stale
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (previously failed but asset allows retries)")
             return
-        
+
         if any_stale_unav:
             asset.status = AssetStatus.Stale
             logger.info(f"Asset {asset} status: {fmt(asset.status)} (parent stale/unavailable)")

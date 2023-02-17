@@ -5,6 +5,6 @@ class GraphWorker:
         self.watched_assets = watched_assets
 
     @abstractmethod
-    def restructure(self, graph):
+    async def restructure(self, graph):
         pass
-    
+
