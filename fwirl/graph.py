@@ -498,7 +498,7 @@ class AssetGraph:
                 new_assets = []
                 for worker in workers_to_notify:
                     logger.info(f"Running graph worker {worker}")
-                    new_assets.append(await worker.restructure(self.graph))
+                    new_assets.append(await worker.restructure(self))
                 if len(new_assets) > 0:
                     logger.info(f"Graph structure changed. Triggering build of new assets...")
                     assets = new_assets
