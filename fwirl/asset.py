@@ -90,3 +90,15 @@ class ExternalAsset(Asset):
     def diff(self, val):
         pass # compare to self._cached_val
 
+
+class EditableAsset(Asset):
+    def __init__(self, key, dependencies, resources=None, group=None, subgroup=None, allow_retry=True):
+        self._ts = AssetStatus.Unavailable
+        super(EditableAsset, self).__init__(key, dependencies, resources=resources, group=group, subgroup=subgroup, allow_retry=allow_retry)
+
+    async def timestamp(self):
+        return self._ts
+
+    async def build(self):
+        self._ts = plm.now()
+        return

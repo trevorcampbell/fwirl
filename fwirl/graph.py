@@ -1,7 +1,7 @@
 import networkx as nx
 import pygraphviz as pgv
 from loguru import logger
-from .asset import Asset, AssetStatus
+from .asset import Asset, AssetStatus, EditableAsset
 #import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 from collections.abc import Iterable
@@ -163,6 +163,115 @@ class AssetGraph:
             logger.info(s)
         return s
 
+    def _asset_by_key(self, key):
+        for asset in self.graph:
+            if asset.key == key:
+                return asset
+        return None
+
+    def _serialize_timestamp(self, ts):
+        if ts == AssetStatus.Unavailable or ts is None:
+            return None
+        if hasattr(ts, "to_iso8601_string"):
+            return ts.to_iso8601_string()
+        return str(ts)
+
+    async def _asset_payload(self, asset):
+        timestamp = await asset.timestamp()
+        return {
+            "key": asset.key,
+            "status": asset.status.name,
+            "message": asset.message,
+            "type": asset.__class__.__name__,
+            "group": asset.group,
+            "subgroup": asset.subgroup,
+            "allow_retry": asset.allow_retry,
+            "timestamp": self._serialize_timestamp(timestamp),
+            "last_build_timestamp": self._serialize_timestamp(asset._last_build_timestamp),
+            "parents": [p.key for p in self.graph.predecessors(asset)],
+            "children": [c.key for c in self.graph.successors(asset)]
+        }
+
+    async def _graph_payload(self):
+        nodes = []
+        for asset in self.graph:
+            nodes.append(await self._asset_payload(asset))
+        edges = []
+        for parent, child in self.graph.edges():
+            edges.append({"from": parent.key, "to": child.key})
+
+        subgroup_buckets = defaultdict(list)
+        for asset in self.graph:
+            group = '__nogroup__' if asset.group is None else str(asset.group)
+            subgroup = '__nosubgroup__' if asset.subgroup is None else str(asset.subgroup)
+            subgroup_buckets[(group, subgroup)].append(asset)
+        collapse_candidates = []
+        for (group, subgroup), assets in subgroup_buckets.items():
+            if len(assets) < 2:
+                continue
+            statuses = {a.status for a in assets}
+            if len(statuses) == 1:
+                status = list(statuses)[0]
+                collapse_candidates.append({
+                    "id": f"{group}::{subgroup}::{status.name}",
+                    "group": None if group == '__nogroup__' else group,
+                    "subgroup": None if subgroup == '__nosubgroup__' else subgroup,
+                    "status": status.name,
+                    "node_keys": [a.key for a in assets]
+                })
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "collapse_candidates": collapse_candidates,
+            "summary": {
+                "asset_count": self.graph.number_of_nodes(),
+                "edge_count": self.graph.number_of_edges()
+            }
+        }
+
+    def add_editable_asset(self, key, dependency_keys=None, group=None, subgroup=None, allow_retry=True):
+        if self._asset_by_key(key) is not None:
+            raise ValueError(f"Asset '{key}' already exists")
+        dependency_keys = [] if dependency_keys is None else dependency_keys
+        dependencies = []
+        for dep_key in dependency_keys:
+            dep = self._asset_by_key(dep_key)
+            if dep is None:
+                raise ValueError(f"Dependency '{dep_key}' not found")
+            dependencies.append(dep)
+        asset = EditableAsset(key, dependencies, group=group, subgroup=subgroup, allow_retry=allow_retry)
+        self.add_assets([asset])
+        return asset
+
+    def update_asset_dependencies(self, asset_key, dependency_keys=None):
+        asset = self._asset_by_key(asset_key)
+        if asset is None:
+            raise ValueError(f"Asset '{asset_key}' not found")
+        old_dependencies = list(asset.dependencies)
+        dependency_keys = [] if dependency_keys is None else dependency_keys
+        new_dependencies = []
+        for dep_key in dependency_keys:
+            dep = self._asset_by_key(dep_key)
+            if dep is None:
+                raise ValueError(f"Dependency '{dep_key}' not found")
+            if dep == asset:
+                raise ValueError("Self-dependency loop detected")
+            new_dependencies.append(dep)
+        self.graph.remove_edges_from([(parent, asset) for parent in self.graph.predecessors(asset)])
+        self.graph.add_edges_from([(dep, asset) for dep in new_dependencies])
+        if not nx.is_directed_acyclic_graph(self.graph):
+            self.graph.remove_edges_from([(dep, asset) for dep in new_dependencies])
+            self.graph.add_edges_from([(parent, asset) for parent in old_dependencies])
+            raise ValueError("Dependency update introduces a cycle")
+        asset.dependencies = new_dependencies
+
+    def remove_asset_by_key(self, asset_key):
+        asset = self._asset_by_key(asset_key)
+        if asset is None:
+            raise ValueError(f"Asset '{asset_key}' not found")
+        self.remove_assets([asset])
+
     def schedule(self, schedule_key, action, cron_string = '', asset = None, immediate_once = False):
         logger.info(f"Adding new schedule with key {schedule_key}")
         if schedule_key in self.schedules:
@@ -267,7 +376,7 @@ class AssetGraph:
         encoded = base64.b64encode(pickled)
         return encoded
 
-    def _process_message(self, msg):
+    async def _process_message(self, msg):
         if msg is None: # if message get timed out
             return
         
@@ -276,6 +385,51 @@ class AssetGraph:
             resp = self._generate_graph_viz(preprocessed)
             resp_msg = {'type': 'response', 'response': resp}
             publish_msg(msg["resp_queue"], resp_msg)
+
+        if msg["type"] == "graph_snapshot":
+            resp = await self._graph_payload()
+            publish_msg(msg["resp_queue"], {'type': 'response', 'response': resp})
+
+        if msg["type"] == "asset_detail":
+            asset = self._asset_by_key(msg["asset_key"])
+            if asset is None:
+                publish_msg(msg["resp_queue"], {'type': 'response', 'response': None})
+            else:
+                resp = await self._asset_payload(asset)
+                publish_msg(msg["resp_queue"], {'type': 'response', 'response': resp})
+
+        if msg["type"] == "add_asset":
+            try:
+                self.add_editable_asset(
+                    msg["asset_key"],
+                    dependency_keys=msg.get("dependencies"),
+                    group=msg.get("group"),
+                    subgroup=msg.get("subgroup"),
+                    allow_retry=msg.get("allow_retry", True)
+                )
+                if "resp_queue" in msg:
+                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True}})
+            except Exception as e:
+                if "resp_queue" in msg:
+                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
+
+        if msg["type"] == "remove_asset":
+            try:
+                self.remove_asset_by_key(msg["asset_key"])
+                if "resp_queue" in msg:
+                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True}})
+            except Exception as e:
+                if "resp_queue" in msg:
+                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
+
+        if msg["type"] == "update_asset_dependencies":
+            try:
+                self.update_asset_dependencies(msg["asset_key"], msg.get("dependencies"))
+                if "resp_queue" in msg:
+                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True}})
+            except Exception as e:
+                if "resp_queue" in msg:
+                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
 
         if msg["type"] == "summarize":
             resp = self.summarize(display=False)
@@ -436,7 +590,7 @@ class AssetGraph:
             # if the message task is done, process it
             if message_task.done():
                 msg = await message_task
-                self._process_message(msg)
+                await self._process_message(msg)
                 message_task = None
 
             # if the job is done, clear it
@@ -853,9 +1007,6 @@ class AssetGraph:
     #    node_sizes = [600 if node[0] == "group" else 100 for node in vizgraph]
     #    nx.draw(vizgraph, pos=pos, node_color=node_colors, node_size=node_sizes)
     #    plt.show()
-
-
-
 
 
 
