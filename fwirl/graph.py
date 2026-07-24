@@ -64,8 +64,39 @@ async def wait_for_dependencies(task, parents):
     return result
 
 class AssetGraph:
+    """A directed acyclic graph of :class:`~fwirl.Asset` objects with a
+    built-in scheduler and messaging interface.
 
-    def __init__(self, key, notifiers = None):
+    :class:`AssetGraph` is the central object in fwirl.  It holds a DAG of
+    assets, tracks their statuses, and orchestrates builds and refreshes both
+    on demand and on a cron-based schedule.  It can also receive commands at
+    runtime through RabbitMQ by calling :meth:`run`.
+
+    Args:
+        key: A unique string identifier for this graph.  The same key is
+            used as the RabbitMQ routing key when running in server mode.
+        notifiers: Optional mapping of `notifiers
+            <https://notifiers.readthedocs.io/>`_ service configurations used
+            to send build notifications.  Each entry has the form::
+
+                {
+                    "<service_name>": {
+                        "params": {...},   # notifiers service params
+                        "level": "ERROR",  # loguru level string
+                    }
+                }
+
+    Example::
+
+        import fwirl
+
+        g = fwirl.AssetGraph("my_graph")
+        g.add_assets([asset_a, asset_b])
+        g.schedule("hourly_build", "build", "0 * * * *")
+        g.run()  # blocks; listens for RabbitMQ commands
+    """
+
+    def __init__(self, key, notifiers=None):
         self.graph = nx.DiGraph()
         self.key = key
         self.schedules = {}
@@ -79,6 +110,20 @@ class AssetGraph:
         self.workers = []
 
     def add_assets(self, assets):
+        """Add a list of assets (and all their transitive dependencies) to the graph.
+
+        The method walks the dependency tree rooted at each asset in *assets*
+        and inserts every discovered node and edge into the internal DiGraph.
+        Duplicate assets (same key) are silently skipped.
+
+        Args:
+            assets: An iterable of :class:`~fwirl.Asset` objects to add.
+
+        Raises:
+            ValueError: If a self-dependency loop is detected, or if any
+                asset's :meth:`~fwirl.Asset.build` or
+                :meth:`~fwirl.Asset.timestamp` method is not a coroutine.
+        """
         logger.info(f"Gathering edges, assets, and upstream assets to add to the graph")
         edges = []
         unq_assets = set()
@@ -113,6 +158,14 @@ class AssetGraph:
                 raise ValueError
 
     def remove_assets(self, assets):
+        """Remove a list of assets from the graph.
+
+        Downstream assets that depended on any removed node are also removed
+        automatically by NetworkX.
+
+        Args:
+            assets: An iterable of :class:`~fwirl.Asset` objects to remove.
+        """
         logger.info(f"Removing {len(assets)} assets and downstream assets from graph")
         old_edges = self.graph.size()
         old_nodes = self.graph.number_of_nodes()
@@ -123,6 +176,16 @@ class AssetGraph:
         logger.info(f"Removed {old_nodes - new_nodes} assets and {old_edges - new_edges} edges from the graph")
 
     def list_assets(self, display=True):
+        """Return (and optionally log) a formatted list of all assets.
+
+        Args:
+            display: When ``True`` (the default) the string is also emitted
+                via the loguru logger.
+
+        Returns:
+            str: A multi-line string listing each asset key and its current
+            :class:`~fwirl.AssetStatus`.
+        """
         s = ''
         if self.graph.number_of_nodes() == 0:
             s += "No assets to list."
@@ -135,6 +198,16 @@ class AssetGraph:
         return s
 
     def list_schedules(self, display=True):
+        """Return (and optionally log) a formatted list of all schedules.
+
+        Args:
+            display: When ``True`` (the default) the string is also emitted
+                via the loguru logger.
+
+        Returns:
+            str: A multi-line string listing each schedule name and its
+            :class:`~fwirl.schedule.Schedule` representation.
+        """
         s = ''
         if len(self.schedules) == 0:
             s += "No schedules to list."
@@ -147,6 +220,16 @@ class AssetGraph:
         return s
 
     def list_jobs(self, display=True):
+        """Return (and optionally log) the current job queue.
+
+        Args:
+            display: When ``True`` (the default) the string is also emitted
+                via the loguru logger.
+
+        Returns:
+            str: A multi-line string describing the currently running job
+            (if any) and the pending job queue.
+        """
         s = ''
         if self.job_running is None:
             s += 'No running job.\n'
@@ -163,7 +246,21 @@ class AssetGraph:
             logger.info(s)
         return s
 
-    def schedule(self, schedule_key, action, cron_string = '', asset = None, immediate_once = False):
+    def schedule(self, schedule_key, action, cron_string='', asset=None, immediate_once=False):
+        """Add a recurring (or one-shot) schedule to the graph.
+
+        Args:
+            schedule_key: A unique string identifier for the schedule.
+            action: ``"refresh"`` to trigger a status refresh, or
+                ``"build"`` to trigger a full build.
+            cron_string: A standard cron expression (e.g.
+                ``"0 6 * * *"`` for 06:00 every day).  Ignored when
+                *immediate_once* is ``True``.
+            asset: Optional :class:`~fwirl.Asset` targeted by the action.
+                When ``None`` the action applies to all assets.
+            immediate_once: When ``True`` the schedule fires once as soon
+                as possible and is then automatically removed.
+        """
         logger.info(f"Adding new schedule with key {schedule_key}")
         if schedule_key in self.schedules:
             logger.error(f"Tried to add schedule key {schedule_key}, but it already exists. Skipping.")
@@ -183,24 +280,53 @@ class AssetGraph:
         self.schedules[schedule_key] = Schedule(schedule_key, func, kwargs, cron_string, immediate_once)
 
     def unschedule(self, schedule_key):
+        """Remove a schedule from the graph.
+
+        Args:
+            schedule_key: The string key of the schedule to remove.
+        """
         logger.info(f"Removing scheduled run '{schedule_key}'")
         if schedule_key not in self.schedules:
             logger.warning(f"Schedule {schedule_key} not in schedules.")
         self.schedules.pop(schedule_key, None)
 
     def pause_schedule(self, schedule_key):
+        """Pause a schedule so that it no longer fires.
+
+        Args:
+            schedule_key: The string key of the schedule to pause.
+        """
         logger.info(f"Pausing schedule '{schedule_key}'")
         self.schedules[schedule_key].pause()
 
     def pause_asset(self, asset):
+        """Set an asset's status to :attr:`~fwirl.AssetStatus.Paused`.
+
+        A paused asset is skipped during builds and its downstream assets
+        are marked :attr:`~fwirl.AssetStatus.UpstreamStopped`.
+
+        Args:
+            asset: The :class:`~fwirl.Asset` to pause.
+        """
         logger.info(f"Pausing asset {asset}")
         asset.status = AssetStatus.Paused
 
     def unpause_schedule(self, schedule_key):
+        """Resume a previously paused schedule.
+
+        Args:
+            schedule_key: The string key of the schedule to resume.
+        """
         logger.info(f"Resuming schedule '{schedule_key}'")
         self.schedules[schedule_key].unpause()
 
     def unpause_asset(self, asset):
+        """Mark a paused asset as :attr:`~fwirl.AssetStatus.Stale` so it
+        will be rebuilt on the next build pass.
+
+        Args:
+            asset: The :class:`~fwirl.Asset` to unpause.
+        """
         logger.info(f"Unpausing asset {asset}")
         asset.status = AssetStatus.Stale
 
@@ -341,6 +467,22 @@ class AssetGraph:
             raise ShutdownSignal
 
     def run(self):
+        """Start the graph server and block until a shutdown signal is received.
+
+        Launches a background thread that listens for RabbitMQ messages
+        addressed to this graph's key, and runs the async job scheduler in
+        the main thread.  The method returns when:
+
+        * a ``shutdown`` message is received via RabbitMQ, or
+        * the user presses ``Ctrl-C``.
+
+        Typical usage::
+
+            g = fwirl.AssetGraph("my_graph")
+            g.add_assets([...])
+            g.schedule("hourly", "build", "0 * * * *")
+            g.run()
+        """
         # change the default sigint handler (which does not behave well with the use of asyncio.to_thread below
         _original_sigint_handler = signal.getsignal(signal.SIGINT)
         def _sigint_handler(sig, frame):
@@ -466,10 +608,31 @@ class AssetGraph:
             except Exception as e:
                 logger.exception(f"Resource {resource} cleanup failed; attempting to clean up other resources")
 
-    def refresh(self, assets = None):
+    def refresh(self, assets=None):
+        """Synchronously refresh the status of all (or specified) assets.
+
+        Checks each asset's :meth:`~fwirl.Asset.timestamp` against its
+        dependencies and updates :attr:`~fwirl.Asset.status` accordingly.
+        Does **not** call :meth:`~fwirl.Asset.build`.
+
+        Args:
+            assets: A single :class:`~fwirl.Asset` or list of assets to
+                refresh.  When ``None`` (the default) every asset in the
+                graph is refreshed.
+        """
         asyncio.run(self._refresh(assets))
 
-    def build(self, assets = None):
+    def build(self, assets=None):
+        """Synchronously build all (or specified) stale and unavailable assets.
+
+        Refreshes statuses first, then calls :meth:`~fwirl.Asset.build` on
+        every asset that is not current.
+
+        Args:
+            assets: A single :class:`~fwirl.Asset` or list of assets to
+                build (fwirl will also build all upstream dependencies).
+                When ``None`` (the default) all assets are considered.
+        """
         asyncio.run(self._build(assets))
 
     async def _refresh(self, assets = None):
@@ -752,6 +915,19 @@ class AssetGraph:
         return groupings
 
     def summarize(self, display=True):
+        """Return (and optionally log) a human-readable status summary.
+
+        The summary includes total asset and edge counts broken down by
+        :class:`~fwirl.AssetStatus`, grouped by the ``group``/``subgroup``
+        labels assigned to each asset.
+
+        Args:
+            display: When ``True`` (the default) the summary is also
+                emitted via the loguru logger.
+
+        Returns:
+            str: The formatted summary string.
+        """
         groupings = self._collect_groups()
         logger.debug("Generating summary")
         summary = f"\nAsset Graph Summary\n-------------------\nAssets: {self.graph.number_of_nodes()}\n"
