@@ -13,7 +13,7 @@ class AssetStatus(Enum):
     Failed = 6
 
 class Asset:
-    def __init__(self, key, dependencies, resources = None, group = None, subgroup = None, allow_retry = True):
+    def __init__(self, key, dependencies, resources = None, group = None, subgroup = None, allow_retry = True, properties = None):
         self.key = key
         self.hash = hash(key)
         self.dependencies = dependencies
@@ -23,7 +23,9 @@ class Asset:
         self.group = group
         self.subgroup = subgroup
         self.allow_retry = allow_retry
+        self.properties = {} if properties is None else dict(properties)
         self._last_build_timestamp = AssetStatus.Unavailable
+        self._ts = AssetStatus.Unavailable
 
     def __hash__(self):
         return self.hash
@@ -38,15 +40,12 @@ class Asset:
     def get_key(self):
         return self.key
 
-    @abstractmethod
     async def timestamp(self):
-        # return timestamp if exists
-        # return AssetStatus.Unavailable if not
-        pass
+        return self._ts
 
-    @abstractmethod
     async def build(self):
-        pass
+        self._ts = plm.now()
+        return
 
 # Assets for which we can only obtain a value (no notion of a timestamp)
 # may be modified by external agents asynchronously with no notification
@@ -89,16 +88,3 @@ class ExternalAsset(Asset):
     @abstractmethod
     def diff(self, val):
         pass # compare to self._cached_val
-
-
-class EditableAsset(Asset):
-    def __init__(self, key, dependencies, resources=None, group=None, subgroup=None, allow_retry=True):
-        self._ts = AssetStatus.Unavailable
-        super(EditableAsset, self).__init__(key, dependencies, resources=resources, group=group, subgroup=subgroup, allow_retry=allow_retry)
-
-    async def timestamp(self):
-        return self._ts
-
-    async def build(self):
-        self._ts = plm.now()
-        return
