@@ -1,4 +1,5 @@
 import networkx as nx
+import pygraphviz as pgv
 from loguru import logger
 from .asset import Asset, AssetStatus
 #import matplotlib.pyplot as plt
@@ -16,6 +17,8 @@ from coolname import generate_slug
 from .message import publish_msg, listen
 import signal
 import inspect
+import pickle
+import base64
 
 
 class ShutdownSignal(Exception):
@@ -30,13 +33,13 @@ __RABBIT_URL__ = "amqp://guest:guest@localhost//"
 __MESSAGE_TTL__ = 1
 
 
-_NODE_COLORS = {AssetStatus.Current : "tab:green",
+_NODE_COLORS = {AssetStatus.Current : "green",
                 AssetStatus.Stale : "khaki",
-                AssetStatus.Building : "tab:blue",
+                AssetStatus.Building : "blue",
                 AssetStatus.Paused : "slategray",
                 AssetStatus.UpstreamStopped : "lightslategray",
                 AssetStatus.Unavailable : "gray",
-                AssetStatus.Failed : "tab:red"
+                AssetStatus.Failed : "red"
             }
 
 # TODO: use HEX to match above colors <fg #00005f>, <fg #EE1>
@@ -207,10 +210,72 @@ class AssetGraph:
         except Empty:
             return None
         return msg
+    
+    # Consolidate status Current nodes to declutter but leave nodes with other statuses
+    # Returns a modified copy of the original graph
+    def _preprocess_graph(self):
+        graph = self.graph.copy()
+        root_nodes = [node for node, in_degree in graph.in_degree() if in_degree == 0]
+        
+        # Stack for traversing graph
+        s = []
+
+        visited = []
+
+        for r in root_nodes:
+            s.append(r)
+
+        while len(s) > 0:
+            n = s.pop()
+
+            if n in visited:
+               continue
+
+            visited.append(n)
+
+            if n.status is not AssetStatus.Current:
+                continue
+
+            # Consolidate node
+            children = list(graph.successors(n))
+            parents = list(graph.predecessors(n))
+
+            for c in children:
+                if n not in root_nodes:
+                    for p in parents:
+                        graph.add_edge(p, c)
+                    graph.remove_node(n)
+                s.append(c)
+                        
+        return graph
+    
+    # Annotates and colors graph then outputs the pickled and base64 encoded SVG representation
+    def _generate_graph_viz(self, graph):
+        agraph = pgv.AGraph(directed=False, strict=True)
+
+        for node, attrs in graph.nodes(data=True):
+            status_color = _NODE_COLORS[node.status]
+            agraph.add_node(node, color=status_color, fontcolor=status_color)
+
+        for u, v, attrs in graph.edges(data=True):
+            agraph.add_edge(u, v)
+
+        agraph.node_attr["shape"] = "square"
+
+        svg = agraph.draw(format='svg', prog='dot')
+        pickled = pickle.dumps(svg)
+        encoded = base64.b64encode(pickled)
+        return encoded
 
     def _process_message(self, msg):
         if msg is None: # if message get timed out
             return
+        
+        if msg["type"] == "graph":
+            preprocessed = self._preprocess_graph()
+            resp = self._generate_graph_viz(preprocessed)
+            resp_msg = {'type': 'response', 'response': resp}
+            publish_msg(msg["resp_queue"], resp_msg)
 
         if msg["type"] == "summarize":
             resp = self.summarize(display=False)
@@ -306,8 +371,8 @@ class AssetGraph:
     async def _run(self):
         message_task = None
         while True:
-            # remove paused schedules from job queue
-            self.job_queue = [job for job in self.job_queue if not self.schedules[job[0]].is_paused()]
+            # remove job from job queue if schedule does not exist or schedule paused
+            self.job_queue = [job for job in self.job_queue if job[0] in self.schedules and not self.schedules[job[0]].is_paused()]
             for sk in self.schedules:
                 if self.schedules[sk].next() == Schedule.IMMEDIATE:
                     # if the immediate job is already in the queue, just skip; otherwise add it
@@ -454,7 +519,7 @@ class AssetGraph:
                 for asset in assets:
                     nodes_to_build.append(asset)
                     nodes_to_build.extend(nx.ancestors(self.graph, asset))
-                sg = self.graph.subgraph(nodes_to_refresh)
+                sg = self.graph.subgraph(nodes_to_build)
                 sorted_nodes = list(nx.topological_sort(sg))
 
             required_resources = set()

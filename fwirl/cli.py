@@ -10,6 +10,10 @@ from .api import (
                  unschedule as api_unschedule,
                  shutdown as api_shutdown
                 )
+from .server import (
+    start_webserver,
+    stop_webserver
+)
 from .message import __RABBIT_URL__
 
 @click.group()
@@ -70,7 +74,7 @@ cli.add_command(pause)
 @click.option("--rabbit_url", default=__RABBIT_URL__)
 def unpause(graph, key, rabbit_url):
     api_unpause(graph, key, rabbit_url)
-cli.add_command(pause)
+cli.add_command(unpause)
 
 @click.command()
 @click.argument("graph")
@@ -79,8 +83,8 @@ cli.add_command(pause)
 @click.argument("cron_string")
 @click.option("--asset", default=None)
 @click.option("--rabbit_url", default=__RABBIT_URL__)
-def schedule(graph, schedule, action, cron_str, asset, rabbit_url):
-    api_schedule(graph, schedule, action, cron_str, asset, rabbit_url)
+def schedule(graph, schedule, action, cron_string, asset, rabbit_url):
+    api_schedule(graph, schedule, action, cron_string, asset, rabbit_url)
 cli.add_command(schedule)
 
 @click.command()
@@ -90,4 +94,19 @@ cli.add_command(schedule)
 def unschedule(graph, schedule, rabbit_url):
     api_unschedule(graph, schedule, rabbit_url)
 cli.add_command(unschedule)
+
+@cli.group()
+def webserver():
+    pass
+
+@click.command()
+def start():
+    start_webserver()
+webserver.add_command(start)
+
+@click.command()
+def stop():
+    stop_webserver()
+webserver.add_command(stop)
+
 

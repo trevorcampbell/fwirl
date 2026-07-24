@@ -40,8 +40,8 @@ def pause(graph_key, key=None, rabbit_url = __RABBIT_URL__):
 def unpause(graph_key, key=None, rabbit_url = __RABBIT_URL__):
     publish_msg(graph_key, {"type": "unpause", "key" : key}, rabbit_url)
     
-def schedule(graph_key, schedule_key, action, cron_str, asset_key=None, rabbit_url = __RABBIT_URL__):
-    publish_msg(graph_key, {"type": "schedule", "schedule_key" : schedule_key, "action" : action, "cron_str" : cron_str, "asset_key" : asset_key}, rabbit_url)
+def schedule(graph_key, schedule_key, action, cron_string, asset_key=None, rabbit_url = __RABBIT_URL__):
+    publish_msg(graph_key, {"type": "schedule", "schedule_key" : schedule_key, "action" : action, "cron_string" : cron_string, "asset_key" : asset_key}, rabbit_url)
     
 def unschedule(graph_key, schedule_key, rabbit_url = __RABBIT_URL__):
     publish_msg(graph_key, {"type": "unschedule", "schedule_key" : schedule_key}, rabbit_url)
