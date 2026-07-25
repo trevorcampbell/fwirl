@@ -9,13 +9,13 @@ specify a non-default broker URL.
 
 Usage::
 
-   fwirl <command> [OPTIONS] GRAPH
+   fwirl <command> [OPTIONS] [ARGS]...
 
 Graph key
 ---------
 
-``GRAPH`` is the string key passed to :class:`~fwirl.AssetGraph` when the
-server was started.
+For commands that target a specific running graph, ``GRAPH`` is the string key
+passed to :class:`~fwirl.AssetGraph` when the server was started.
 
 Commands
 --------
@@ -26,6 +26,13 @@ Commands
 Print a human-readable status summary of the running graph::
 
    fwirl summarize my_graph
+
+``list-graphs``
+~~~~~~~~~~~~~~~
+
+List the graph keys of currently running graph servers::
+
+   fwirl list-graphs
 
 ``ls``
 ~~~~~~

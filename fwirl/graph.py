@@ -15,6 +15,7 @@ from queue import Queue as ThreadSafeQueue, Empty
 from threading import Thread
 from coolname import generate_slug
 from .message import publish_msg, listen
+from .registry import register_graph_process, unregister_graph_process, list_running_graphs
 import signal
 import inspect
 import pickle
@@ -246,6 +247,94 @@ class AssetGraph:
             logger.info(s)
         return s
 
+    def _asset_by_key(self, key):
+        for asset in self.graph:
+            if asset.key == key:
+                return asset
+        return None
+
+    def _serialize_timestamp(self, ts):
+        if ts == AssetStatus.Unavailable or ts is None:
+            return None
+        if hasattr(ts, "to_iso8601_string"):
+            return ts.to_iso8601_string()
+        return str(ts)
+
+    def _serialize_property_value(self, value):
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        if isinstance(value, dict):
+            return {str(k): self._serialize_property_value(v) for k, v in value.items()}
+        if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+            return [self._serialize_property_value(v) for v in value]
+        return str(value)
+
+    async def _asset_payload(self, asset):
+        timestamp = await asset.timestamp()
+        return {
+            "key": asset.key,
+            "status": asset.status.name,
+            "message": asset.message,
+            "type": asset.__class__.__name__,
+            "group": asset.group,
+            "subgroup": asset.subgroup,
+            "allow_retry": asset.allow_retry,
+            "timestamp": self._serialize_timestamp(timestamp),
+            "last_build_timestamp": self._serialize_timestamp(asset._last_build_timestamp),
+            "parents": [p.key for p in self.graph.predecessors(asset)],
+            "children": [c.key for c in self.graph.successors(asset)],
+            "properties": self._serialize_property_value(asset.properties),
+        }
+
+    async def _graph_payload(self):
+        nodes = []
+        for asset in self.graph:
+            nodes.append(await self._asset_payload(asset))
+        edges = []
+        for parent, child in self.graph.edges():
+            edges.append({"from": parent.key, "to": child.key})
+
+        subgroup_buckets = defaultdict(list)
+        for asset in self.graph:
+            if asset.group is None and asset.subgroup is None:
+                continue
+            group = '__nogroup__' if asset.group is None else str(asset.group)
+            subgroup = '__nosubgroup__' if asset.subgroup is None else str(asset.subgroup)
+            subgroup_buckets[(group, subgroup)].append(asset)
+        collapse_candidates = []
+        for (group, subgroup), assets in subgroup_buckets.items():
+            if len(assets) < 2:
+                continue
+            statuses = {a.status for a in assets}
+            if len(statuses) == 1:
+                status = list(statuses)[0]
+                collapse_candidates.append({
+                    "id": f"{group}::{subgroup}::{status.name}",
+                    "group": None if group == '__nogroup__' else group,
+                    "subgroup": None if subgroup == '__nosubgroup__' else subgroup,
+                    "status": status.name,
+                    "node_keys": [a.key for a in assets]
+                })
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "collapse_candidates": collapse_candidates,
+            "summary": {
+                "asset_count": self.graph.number_of_nodes(),
+                "edge_count": self.graph.number_of_edges()
+            }
+        }
+
+    def update_asset_properties(self, asset_key, properties):
+        asset = self._asset_by_key(asset_key)
+        if asset is None:
+            raise ValueError(f"Asset '{asset_key}' not found")
+        if not isinstance(properties, dict):
+            raise ValueError("Properties must be a dictionary")
+        asset.properties = dict(properties)
+        return asset
+
     def schedule(self, schedule_key, action, cron_string='', asset=None, immediate_once=False):
         """Add a recurring (or one-shot) schedule to the graph.
 
@@ -393,7 +482,7 @@ class AssetGraph:
         encoded = base64.b64encode(pickled)
         return encoded
 
-    def _process_message(self, msg):
+    async def _process_message(self, msg):
         if msg is None: # if message get timed out
             return
         
@@ -402,6 +491,27 @@ class AssetGraph:
             resp = self._generate_graph_viz(preprocessed)
             resp_msg = {'type': 'response', 'response': resp}
             publish_msg(msg["resp_queue"], resp_msg)
+
+        if msg["type"] == "graph_snapshot":
+            resp = await self._graph_payload()
+            publish_msg(msg["resp_queue"], {'type': 'response', 'response': resp})
+
+        if msg["type"] == "asset_detail":
+            asset = self._asset_by_key(msg["asset_key"])
+            if asset is None:
+                publish_msg(msg["resp_queue"], {'type': 'response', 'response': None})
+            else:
+                resp = await self._asset_payload(asset)
+                publish_msg(msg["resp_queue"], {'type': 'response', 'response': resp})
+
+        if msg["type"] == "update_asset_properties":
+            try:
+                self.update_asset_properties(msg["asset_key"], msg.get("properties", {}))
+                if "resp_queue" in msg:
+                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True}})
+            except Exception as e:
+                if "resp_queue" in msg:
+                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
 
         if msg["type"] == "summarize":
             resp = self.summarize(display=False)
@@ -490,25 +600,33 @@ class AssetGraph:
             raise KeyboardInterrupt # then raise the interrupt
         signal.signal(signal.SIGINT, _sigint_handler)
 
-        # run the message handling loop
-        # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
-        logger.info(f"Starting fwirl messaging loop")
-        th = Thread(name = "fwirl_messaging_loop", target=listen, args=(self.key, self.message_queue,), daemon=True)
-        th.start()
-
-        logger.info(f"Starting fwirl job event loop")
-        # run the task executor/scheduler async
+        registration_file = None
+        th = None
         try:
+            registration_file = register_graph_process(self.key)
+            # run the message handling loop
+            # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
+            logger.info(f"Starting fwirl messaging loop")
+            th = Thread(name = "fwirl_messaging_loop", target=listen, args=(self.key, self.message_queue,), daemon=True)
+            th.start()
+
+            logger.info(f"Starting fwirl job event loop")
+            # run the task executor/scheduler async
             asyncio.run(self._run())
+        except ValueError as e:
+            logger.error(str(e))
         except KeyboardInterrupt:
             logger.info(f"Caught keyboard interrupt; stopping main loop and messaging loop of asset graph {self.key}")
             publish_msg(self.key, {"type": "shutdown"})
         except ShutdownSignal:
             # this only happens if the messaging loop got the "shutdown" message, so it is already shutting itself down, no need to publish shutdown msg
             logger.info(f"Caught shutdown signal; stopping main loop of asset graph {self.key}")
-        th.join()
-        # restore the original sigint handler
-        signal.signal(signal.SIGINT, _original_sigint_handler)
+        finally:
+            if th is not None:
+                th.join()
+            unregister_graph_process(registration_file)
+            # restore the original sigint handler
+            signal.signal(signal.SIGINT, _original_sigint_handler)
 
     async def _run(self):
         message_task = None
@@ -578,7 +696,7 @@ class AssetGraph:
             # if the message task is done, process it
             if message_task.done():
                 msg = await message_task
-                self._process_message(msg)
+                await self._process_message(msg)
                 message_task = None
 
             # if the job is done, clear it
@@ -659,7 +777,10 @@ class AssetGraph:
         task_map = {}
         for asset in sorted_nodes:
             coroutine = self._refresh_asset(asset)
-            task = asyncio.create_task(wait_for_dependencies(coroutine, [task_map[a] for a in self.graph.predecessors(asset)]))
+            task = asyncio.create_task(wait_for_dependencies(
+                coroutine,
+                [task_map[a] for a in self.graph.predecessors(asset) if a in task_map],
+            ))
             task_map[asset] = task
 
         for asset in sorted_nodes:
@@ -695,7 +816,10 @@ class AssetGraph:
             task_map = {}
             for asset in sorted_nodes:
                 coroutine = self._refresh_asset(asset)
-                _task = asyncio.create_task(wait_for_dependencies(coroutine, [task_map[a] for a in self.graph.predecessors(asset)]))
+                _task = asyncio.create_task(wait_for_dependencies(
+                    coroutine,
+                    [task_map[a] for a in self.graph.predecessors(asset) if a in task_map],
+                ))
                 coroutine = self._build_asset(asset)
                 task = asyncio.create_task(wait_for_dependencies(coroutine, [_task]))
                 task_map[asset] = task
@@ -1029,10 +1153,3 @@ class AssetGraph:
     #    node_sizes = [600 if node[0] == "group" else 100 for node in vizgraph]
     #    nx.draw(vizgraph, pos=pos, node_color=node_colors, node_size=node_sizes)
     #    plt.show()
-
-
-
-
-
-
-

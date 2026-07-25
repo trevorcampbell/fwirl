@@ -71,6 +71,7 @@ For a fuller walkthrough, see:
 The package installs a `fwirl` command:
 
 ```bash
+fwirl list-graphs
 fwirl summarize my_graph
 fwirl ls my_graph --assets
 fwirl build my_graph

@@ -44,3 +44,5 @@ def publish_msg(key, body, url = __RABBIT_URL__):
         producer = conn.Producer()
         producer.publish(body, exchange=exch, routing_key = key, declare=[queue])
 
+
+

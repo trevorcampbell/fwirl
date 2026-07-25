@@ -44,6 +44,8 @@ class Asset:
         allow_retry: When ``True`` (the default) a failed asset will be
             retried on the next build pass; when ``False`` a failed asset
             stays in the ``Failed`` state until manually unpaused.
+        properties: Optional dictionary of JSON-serializable metadata
+            exposed by the UI.
 
     Example::
 
@@ -61,7 +63,7 @@ class Asset:
                 ...
     """
 
-    def __init__(self, key, dependencies, resources=None, group=None, subgroup=None, allow_retry=True):
+    def __init__(self, key, dependencies, resources=None, group=None, subgroup=None, allow_retry=True, properties=None):
         self.key = key
         self.hash = hash(key)
         self.dependencies = dependencies
@@ -71,6 +73,7 @@ class Asset:
         self.group = group
         self.subgroup = subgroup
         self.allow_retry = allow_retry
+        self.properties = {} if properties is None else dict(properties)
         self._last_build_timestamp = AssetStatus.Unavailable
 
     def __hash__(self):
@@ -203,4 +206,3 @@ class ExternalAsset(Asset):
             bool: ``True`` when the asset should be considered stale.
         """
         pass  # compare to self._cached_val
-

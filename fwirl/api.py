@@ -1,6 +1,7 @@
 import pendulum as plm
 from coolname import generate_slug
 from .message import get_msg, publish_msg, listen, __RABBIT_URL__
+from .registry import list_running_graphs
 from queue import Queue
 
 
@@ -24,6 +25,21 @@ def summarize(graph_key, rabbit_url=__RABBIT_URL__):
         print("Caught keyboard interrupt; quitting")
         quit()
     print(queue.get()['response'])
+
+
+def list_graphs():
+    """List the graph keys of currently running asset graph servers.
+
+    Returns:
+        list[str]: Sorted graph keys discovered on the local machine.
+    """
+    graphs = list_running_graphs()
+    if len(graphs) == 0:
+        print("No running graphs found.")
+    else:
+        for graph_key in graphs:
+            print(graph_key)
+    return graphs
 
 
 def ls(graph_key, assets=False, schedules=False, jobs=False, rabbit_url=__RABBIT_URL__):
