@@ -777,7 +777,10 @@ class AssetGraph:
         task_map = {}
         for asset in sorted_nodes:
             coroutine = self._refresh_asset(asset)
-            task = asyncio.create_task(wait_for_dependencies(coroutine, [task_map[a] for a in self.graph.predecessors(asset)]))
+            task = asyncio.create_task(wait_for_dependencies(
+                coroutine,
+                [task_map[a] for a in self.graph.predecessors(asset) if a in task_map],
+            ))
             task_map[asset] = task
 
         for asset in sorted_nodes:
@@ -813,7 +816,10 @@ class AssetGraph:
             task_map = {}
             for asset in sorted_nodes:
                 coroutine = self._refresh_asset(asset)
-                _task = asyncio.create_task(wait_for_dependencies(coroutine, [task_map[a] for a in self.graph.predecessors(asset)]))
+                _task = asyncio.create_task(wait_for_dependencies(
+                    coroutine,
+                    [task_map[a] for a in self.graph.predecessors(asset) if a in task_map],
+                ))
                 coroutine = self._build_asset(asset)
                 task = asyncio.create_task(wait_for_dependencies(coroutine, [_task]))
                 task_map[asset] = task
