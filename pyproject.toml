@@ -35,6 +35,13 @@ docs = [
   "furo",
   "sphinx-autodoc-typehints",
 ]
+test = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+]
 
 [project.scripts]
 fwirl = "fwirl.cli:cli"
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

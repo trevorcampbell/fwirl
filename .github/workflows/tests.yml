@@ -1,0 +1,132 @@
+name: Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y graphviz graphviz-dev
+
+      - name: Install package and test dependencies
+        run: pip install -e '.[test]'
+
+      - name: Run tests
+        id: run_tests
+        run: |
+          python -m pytest tests/ \
+            --tb=short \
+            --junitxml=test-results.xml \
+            -q \
+            2>&1 | tee pytest-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.xml
+
+      - name: Post test results as PR comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Read pytest output
+            let pytestOutput = '';
+            try {
+              pytestOutput = fs.readFileSync('pytest-output.txt', 'utf8');
+            } catch (e) {
+              pytestOutput = 'Could not read test output.';
+            }
+
+            // Parse JUnit XML for summary
+            let passed = 0, failed = 0, errors = 0, skipped = 0, total = 0;
+            try {
+              const xmlContent = fs.readFileSync('test-results.xml', 'utf8');
+              const testsMatch = xmlContent.match(/tests="(\d+)"/);
+              const failuresMatch = xmlContent.match(/failures="(\d+)"/);
+              const errorsMatch = xmlContent.match(/errors="(\d+)"/);
+              const skippedMatch = xmlContent.match(/skipped="(\d+)"/);
+              total    = testsMatch  ? parseInt(testsMatch[1])   : 0;
+              failed   = failuresMatch ? parseInt(failuresMatch[1]) : 0;
+              errors   = errorsMatch ? parseInt(errorsMatch[1])  : 0;
+              skipped  = skippedMatch ? parseInt(skippedMatch[1]) : 0;
+              passed   = total - failed - errors - skipped;
+            } catch (e) {
+              // XML not available, fall back to text output only
+            }
+
+            const exitCode = '${{ steps.run_tests.outputs.exit_code }}';
+            const success = exitCode === '0';
+            const icon = success ? '✅' : '❌';
+            const statusLabel = success ? 'passed' : 'FAILED';
+
+            // Truncate long output to stay within GitHub comment size limits
+            const MAX_CHARS = 5000;
+            const truncated = pytestOutput.length > MAX_CHARS
+              ? '...(truncated; see full output in workflow logs)...\n' +
+                pytestOutput.slice(pytestOutput.length - MAX_CHARS)
+              : pytestOutput;
+
+            const summaryLine = total > 0
+              ? `**${passed} passed** · ${failed + errors} failed · ${skipped} skipped · ${total} total`
+              : '';
+
+            const body = [
+              `## ${icon} Test results — ${statusLabel}`,
+              summaryLine,
+              '',
+              '<details>',
+              '<summary>Full pytest output</summary>',
+              '',
+              '```',
+              truncated,
+              '```',
+              '</details>',
+            ].filter(line => line !== null).join('\n');
+
+            // Find and update an existing bot comment, or create a new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Test results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner:      context.repo.owner,
+                repo:       context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            }
