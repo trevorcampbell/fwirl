@@ -1,6 +1,7 @@
 import pendulum as plm
 from coolname import generate_slug
-from .message import get_msg, publish_msg, listen, list_running_graphs, __RABBIT_URL__
+from .message import get_msg, publish_msg, listen, __RABBIT_URL__
+from .registry import list_running_graphs
 from queue import Queue
 
 

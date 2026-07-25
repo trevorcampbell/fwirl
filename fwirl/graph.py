@@ -14,7 +14,8 @@ from enum import Enum
 from queue import Queue as ThreadSafeQueue, Empty
 from threading import Thread
 from coolname import generate_slug
-from .message import publish_msg, listen, register_graph_process, unregister_graph_process
+from .message import publish_msg, listen
+from .registry import register_graph_process, unregister_graph_process, list_running_graphs
 import signal
 import inspect
 import pickle
