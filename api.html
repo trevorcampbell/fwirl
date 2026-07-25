@@ -239,7 +239,7 @@
 <h2>Assets<a class="headerlink" href="#assets" title="Link to this heading">¶</a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="fwirl.Asset">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">fwirl.</span></span><span class="sig-name descname"><span class="pre">Asset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dependencies</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">resources</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subgroup</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_retry</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fwirl/asset.html#Asset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fwirl.Asset" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">fwirl.</span></span><span class="sig-name descname"><span class="pre">Asset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dependencies</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">resources</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subgroup</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_retry</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">properties</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fwirl/asset.html#Asset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fwirl.Asset" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>Abstract base class for a single node in an <a class="reference internal" href="#fwirl.AssetGraph" title="fwirl.AssetGraph"><code class="xref py py-class docutils literal notranslate"><span class="pre">AssetGraph</span></code></a>.</p>
 <p>Subclass <a class="reference internal" href="#fwirl.Asset" title="fwirl.Asset"><code class="xref py py-class docutils literal notranslate"><span class="pre">Asset</span></code></a> and implement the <a class="reference internal" href="#fwirl.Asset.timestamp" title="fwirl.Asset.timestamp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">timestamp()</span></code></a> and
@@ -258,6 +258,8 @@ will be initialized before and cleaned up after every build.</p></li>
 <li><p><strong>allow_retry</strong> – When <code class="docutils literal notranslate"><span class="pre">True</span></code> (the default) a failed asset will be
 retried on the next build pass; when <code class="docutils literal notranslate"><span class="pre">False</span></code> a failed asset
 stays in the <code class="docutils literal notranslate"><span class="pre">Failed</span></code> state until manually unpaused.</p></li>
+<li><p><strong>properties</strong> – Optional dictionary of JSON-serializable metadata
+exposed by the UI.</p></li>
 </ul>
 </dd>
 </dl>
@@ -594,6 +596,11 @@ via the loguru logger.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="fwirl.AssetGraph.update_asset_properties">
+<span class="sig-name descname"><span class="pre">update_asset_properties</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">asset_key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">properties</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fwirl/graph.html#AssetGraph.update_asset_properties"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fwirl.AssetGraph.update_asset_properties" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="fwirl.AssetGraph.schedule">
 <span class="sig-name descname"><span class="pre">schedule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">schedule_key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cron_string</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">asset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">immediate_once</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fwirl/graph.html#AssetGraph.schedule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fwirl.AssetGraph.schedule" title="Link to this definition">¶</a></dt>
 <dd><p>Add a recurring (or one-shot) schedule to the graph.</p>
@@ -917,8 +924,10 @@ possible and is then removed from the graph.</p></li>
 </section>
 <section id="remote-api">
 <h2>Remote API<a class="headerlink" href="#remote-api" title="Link to this heading">¶</a></h2>
-<p>These functions communicate with a running <a class="reference internal" href="#fwirl.AssetGraph" title="fwirl.AssetGraph"><code class="xref py py-class docutils literal notranslate"><span class="pre">AssetGraph</span></code></a> server
-over RabbitMQ.  They are also exposed as <a class="reference internal" href="cli.html#cli"><span class="std std-ref">CLI commands</span></a>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">fwirl.api.list_graphs</span></code> discovers running graphs on the local machine.
+The remaining functions communicate with a running
+<a class="reference internal" href="#fwirl.AssetGraph" title="fwirl.AssetGraph"><code class="xref py py-class docutils literal notranslate"><span class="pre">AssetGraph</span></code></a> server over RabbitMQ. They are also exposed as
+<a class="reference internal" href="cli.html#cli"><span class="std std-ref">CLI commands</span></a>.</p>
 <dl class="py function">
 <dt class="sig sig-object py" id="fwirl.api.summarize">
 <span class="sig-prename descclassname"><span class="pre">fwirl.api.</span></span><span class="sig-name descname"><span class="pre">summarize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">graph_key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rabbit_url</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'amqp://guest:guest&#64;localhost//'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fwirl/api.html#summarize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fwirl.api.summarize" title="Link to this definition">¶</a></dt>
@@ -932,6 +941,17 @@ over RabbitMQ.  They are also exposed as <a class="reference internal" href="cli
 <li><p><strong>rabbit_url</strong> – RabbitMQ connection URL.  Defaults to
 <code class="docutils literal notranslate"><span class="pre">******localhost//</span></code>.</p></li>
 </ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="fwirl.api.list_graphs">
+<span class="sig-prename descclassname"><span class="pre">fwirl.api.</span></span><span class="sig-name descname"><span class="pre">list_graphs</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/fwirl/api.html#list_graphs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fwirl.api.list_graphs" title="Link to this definition">¶</a></dt>
+<dd><p>List the graph keys of currently running asset graph servers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>list[str]</em> – Sorted graph keys discovered on the local machine.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1154,6 +1174,7 @@ When <code class="docutils literal notranslate"><span class="pre">None</span></c
 <li><a class="reference internal" href="#fwirl.AssetGraph.list_assets"><code class="docutils literal notranslate"><span class="pre">AssetGraph.list_assets()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.list_schedules"><code class="docutils literal notranslate"><span class="pre">AssetGraph.list_schedules()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.list_jobs"><code class="docutils literal notranslate"><span class="pre">AssetGraph.list_jobs()</span></code></a></li>
+<li><a class="reference internal" href="#fwirl.AssetGraph.update_asset_properties"><code class="docutils literal notranslate"><span class="pre">AssetGraph.update_asset_properties()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.schedule"><code class="docutils literal notranslate"><span class="pre">AssetGraph.schedule()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.unschedule"><code class="docutils literal notranslate"><span class="pre">AssetGraph.unschedule()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.pause_schedule"><code class="docutils literal notranslate"><span class="pre">AssetGraph.pause_schedule()</span></code></a></li>
@@ -1197,6 +1218,7 @@ When <code class="docutils literal notranslate"><span class="pre">None</span></c
 </li>
 <li><a class="reference internal" href="#remote-api">Remote API</a><ul>
 <li><a class="reference internal" href="#fwirl.api.summarize"><code class="docutils literal notranslate"><span class="pre">summarize()</span></code></a></li>
+<li><a class="reference internal" href="#fwirl.api.list_graphs"><code class="docutils literal notranslate"><span class="pre">list_graphs()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.api.ls"><code class="docutils literal notranslate"><span class="pre">ls()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.api.build"><code class="docutils literal notranslate"><span class="pre">build()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.api.refresh"><code class="docutils literal notranslate"><span class="pre">refresh()</span></code></a></li>

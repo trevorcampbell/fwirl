@@ -239,13 +239,13 @@
 server over RabbitMQ.  Every command accepts a <code class="docutils literal notranslate"><span class="pre">--rabbit_url</span></code> option to
 specify a non-default broker URL.</p>
 <p>Usage:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">fwirl</span> <span class="o">&lt;</span><span class="n">command</span><span class="o">&gt;</span> <span class="p">[</span><span class="n">OPTIONS</span><span class="p">]</span> <span class="n">GRAPH</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">fwirl</span> <span class="o">&lt;</span><span class="n">command</span><span class="o">&gt;</span> <span class="p">[</span><span class="n">OPTIONS</span><span class="p">]</span> <span class="p">[</span><span class="n">ARGS</span><span class="p">]</span><span class="o">...</span>
 </pre></div>
 </div>
 <section id="graph-key">
 <h2>Graph key<a class="headerlink" href="#graph-key" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">GRAPH</span></code> is the string key passed to <a class="reference internal" href="api.html#fwirl.AssetGraph" title="fwirl.AssetGraph"><code class="xref py py-class docutils literal notranslate"><span class="pre">AssetGraph</span></code></a> when the
-server was started.</p>
+<p>For commands that target a specific running graph, <code class="docutils literal notranslate"><span class="pre">GRAPH</span></code> is the string key
+passed to <a class="reference internal" href="api.html#fwirl.AssetGraph" title="fwirl.AssetGraph"><code class="xref py py-class docutils literal notranslate"><span class="pre">AssetGraph</span></code></a> when the server was started.</p>
 </section>
 <section id="commands">
 <h2>Commands<a class="headerlink" href="#commands" title="Link to this heading">¶</a></h2>
@@ -253,6 +253,13 @@ server was started.</p>
 <h3><code class="docutils literal notranslate"><span class="pre">summarize</span></code><a class="headerlink" href="#summarize" title="Link to this heading">¶</a></h3>
 <p>Print a human-readable status summary of the running graph:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">fwirl</span> <span class="n">summarize</span> <span class="n">my_graph</span>
+</pre></div>
+</div>
+</section>
+<section id="list-graphs">
+<h3><code class="docutils literal notranslate"><span class="pre">list-graphs</span></code><a class="headerlink" href="#list-graphs" title="Link to this heading">¶</a></h3>
+<p>List the graph keys of currently running graph servers:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">fwirl</span> <span class="nb">list</span><span class="o">-</span><span class="n">graphs</span>
 </pre></div>
 </div>
 </section>
@@ -379,6 +386,7 @@ server was started.</p>
 <li><a class="reference internal" href="#graph-key">Graph key</a></li>
 <li><a class="reference internal" href="#commands">Commands</a><ul>
 <li><a class="reference internal" href="#summarize"><code class="docutils literal notranslate"><span class="pre">summarize</span></code></a></li>
+<li><a class="reference internal" href="#list-graphs"><code class="docutils literal notranslate"><span class="pre">list-graphs</span></code></a></li>
 <li><a class="reference internal" href="#ls"><code class="docutils literal notranslate"><span class="pre">ls</span></code></a></li>
 <li><a class="reference internal" href="#build"><code class="docutils literal notranslate"><span class="pre">build</span></code></a></li>
 <li><a class="reference internal" href="#refresh"><code class="docutils literal notranslate"><span class="pre">refresh</span></code></a></li>

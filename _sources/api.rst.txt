@@ -41,10 +41,13 @@ Schedules
 Remote API
 ----------
 
-These functions communicate with a running :class:`~fwirl.AssetGraph` server
-over RabbitMQ.  They are also exposed as :ref:`CLI commands <cli>`.
+``fwirl.api.list_graphs`` discovers running graphs on the local machine.
+The remaining functions communicate with a running
+:class:`~fwirl.AssetGraph` server over RabbitMQ. They are also exposed as
+:ref:`CLI commands <cli>`.
 
 .. autofunction:: fwirl.api.summarize
+.. autofunction:: fwirl.api.list_graphs
 .. autofunction:: fwirl.api.ls
 .. autofunction:: fwirl.api.build
 .. autofunction:: fwirl.api.refresh

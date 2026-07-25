@@ -244,6 +244,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">threading</span><span class="w"> </span><span class="kn">import</span> <span class="n">Thread</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">coolname</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_slug</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.message</span><span class="w"> </span><span class="kn">import</span> <span class="n">publish_msg</span><span class="p">,</span> <span class="n">listen</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">register_graph_process</span><span class="p">,</span> <span class="n">unregister_graph_process</span><span class="p">,</span> <span class="n">list_running_graphs</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">signal</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
@@ -492,6 +493,97 @@
         <span class="k">return</span> <span class="n">s</span></div>
 
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_asset_by_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">asset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">asset</span><span class="o">.</span><span class="n">key</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">asset</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_serialize_timestamp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ts</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ts</span> <span class="o">==</span> <span class="n">AssetStatus</span><span class="o">.</span><span class="n">Unavailable</span> <span class="ow">or</span> <span class="n">ts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="s2">&quot;to_iso8601_string&quot;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">ts</span><span class="o">.</span><span class="n">to_iso8601_string</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_serialize_property_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="n">value</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">):</span> <span class="bp">self</span><span class="o">.</span><span class="n">_serialize_property_value</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_serialize_property_value</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="p">]</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_asset_payload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">asset</span><span class="p">):</span>
+        <span class="n">timestamp</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asset</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;key&quot;</span><span class="p">:</span> <span class="n">asset</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
+            <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="n">asset</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">asset</span><span class="o">.</span><span class="n">message</span><span class="p">,</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="n">asset</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+            <span class="s2">&quot;group&quot;</span><span class="p">:</span> <span class="n">asset</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
+            <span class="s2">&quot;subgroup&quot;</span><span class="p">:</span> <span class="n">asset</span><span class="o">.</span><span class="n">subgroup</span><span class="p">,</span>
+            <span class="s2">&quot;allow_retry&quot;</span><span class="p">:</span> <span class="n">asset</span><span class="o">.</span><span class="n">allow_retry</span><span class="p">,</span>
+            <span class="s2">&quot;timestamp&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_serialize_timestamp</span><span class="p">(</span><span class="n">timestamp</span><span class="p">),</span>
+            <span class="s2">&quot;last_build_timestamp&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_serialize_timestamp</span><span class="p">(</span><span class="n">asset</span><span class="o">.</span><span class="n">_last_build_timestamp</span><span class="p">),</span>
+            <span class="s2">&quot;parents&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">key</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">predecessors</span><span class="p">(</span><span class="n">asset</span><span class="p">)],</span>
+            <span class="s2">&quot;children&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">key</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">successors</span><span class="p">(</span><span class="n">asset</span><span class="p">)],</span>
+            <span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_serialize_property_value</span><span class="p">(</span><span class="n">asset</span><span class="o">.</span><span class="n">properties</span><span class="p">),</span>
+        <span class="p">}</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_graph_payload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">nodes</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">asset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="p">:</span>
+            <span class="n">nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_asset_payload</span><span class="p">(</span><span class="n">asset</span><span class="p">))</span>
+        <span class="n">edges</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">parent</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">edges</span><span class="p">():</span>
+            <span class="n">edges</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;from&quot;</span><span class="p">:</span> <span class="n">parent</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="s2">&quot;to&quot;</span><span class="p">:</span> <span class="n">child</span><span class="o">.</span><span class="n">key</span><span class="p">})</span>
+
+        <span class="n">subgroup_buckets</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">asset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">asset</span><span class="o">.</span><span class="n">group</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">asset</span><span class="o">.</span><span class="n">subgroup</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">group</span> <span class="o">=</span> <span class="s1">&#39;__nogroup__&#39;</span> <span class="k">if</span> <span class="n">asset</span><span class="o">.</span><span class="n">group</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">asset</span><span class="o">.</span><span class="n">group</span><span class="p">)</span>
+            <span class="n">subgroup</span> <span class="o">=</span> <span class="s1">&#39;__nosubgroup__&#39;</span> <span class="k">if</span> <span class="n">asset</span><span class="o">.</span><span class="n">subgroup</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">asset</span><span class="o">.</span><span class="n">subgroup</span><span class="p">)</span>
+            <span class="n">subgroup_buckets</span><span class="p">[(</span><span class="n">group</span><span class="p">,</span> <span class="n">subgroup</span><span class="p">)]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span>
+        <span class="n">collapse_candidates</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">group</span><span class="p">,</span> <span class="n">subgroup</span><span class="p">),</span> <span class="n">assets</span> <span class="ow">in</span> <span class="n">subgroup_buckets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">assets</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">statuses</span> <span class="o">=</span> <span class="p">{</span><span class="n">a</span><span class="o">.</span><span class="n">status</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">assets</span><span class="p">}</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">statuses</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">status</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">statuses</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">collapse_candidates</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">group</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">subgroup</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">status</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;group&quot;</span><span class="p">:</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">group</span> <span class="o">==</span> <span class="s1">&#39;__nogroup__&#39;</span> <span class="k">else</span> <span class="n">group</span><span class="p">,</span>
+                    <span class="s2">&quot;subgroup&quot;</span><span class="p">:</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">subgroup</span> <span class="o">==</span> <span class="s1">&#39;__nosubgroup__&#39;</span> <span class="k">else</span> <span class="n">subgroup</span><span class="p">,</span>
+                    <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="n">status</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                    <span class="s2">&quot;node_keys&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">a</span><span class="o">.</span><span class="n">key</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">assets</span><span class="p">]</span>
+                <span class="p">})</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;nodes&quot;</span><span class="p">:</span> <span class="n">nodes</span><span class="p">,</span>
+            <span class="s2">&quot;edges&quot;</span><span class="p">:</span> <span class="n">edges</span><span class="p">,</span>
+            <span class="s2">&quot;collapse_candidates&quot;</span><span class="p">:</span> <span class="n">collapse_candidates</span><span class="p">,</span>
+            <span class="s2">&quot;summary&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;asset_count&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">number_of_nodes</span><span class="p">(),</span>
+                <span class="s2">&quot;edge_count&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">number_of_edges</span><span class="p">()</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+
+<div class="viewcode-block" id="AssetGraph.update_asset_properties">
+<a class="viewcode-back" href="../../api.html#fwirl.AssetGraph.update_asset_properties">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update_asset_properties</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">asset_key</span><span class="p">,</span> <span class="n">properties</span><span class="p">):</span>
+        <span class="n">asset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_asset_by_key</span><span class="p">(</span><span class="n">asset_key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">asset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Asset &#39;</span><span class="si">{</span><span class="n">asset_key</span><span class="si">}</span><span class="s2">&#39; not found&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Properties must be a dictionary&quot;</span><span class="p">)</span>
+        <span class="n">asset</span><span class="o">.</span><span class="n">properties</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">properties</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">asset</span></div>
+
+
 <div class="viewcode-block" id="AssetGraph.schedule">
 <a class="viewcode-back" href="../../api.html#fwirl.AssetGraph.schedule">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">schedule</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schedule_key</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">cron_string</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">asset</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">immediate_once</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
@@ -657,7 +749,7 @@
         <span class="n">encoded</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">pickled</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">encoded</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_process_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_process_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">msg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span> <span class="c1"># if message get timed out</span>
             <span class="k">return</span>
         
@@ -666,6 +758,27 @@
             <span class="n">resp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_graph_viz</span><span class="p">(</span><span class="n">preprocessed</span><span class="p">)</span>
             <span class="n">resp_msg</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;response&#39;</span><span class="p">,</span> <span class="s1">&#39;response&#39;</span><span class="p">:</span> <span class="n">resp</span><span class="p">}</span>
             <span class="n">publish_msg</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;resp_queue&quot;</span><span class="p">],</span> <span class="n">resp_msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;graph_snapshot&quot;</span><span class="p">:</span>
+            <span class="n">resp</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_graph_payload</span><span class="p">()</span>
+            <span class="n">publish_msg</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;resp_queue&quot;</span><span class="p">],</span> <span class="p">{</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;response&#39;</span><span class="p">,</span> <span class="s1">&#39;response&#39;</span><span class="p">:</span> <span class="n">resp</span><span class="p">})</span>
+
+        <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;asset_detail&quot;</span><span class="p">:</span>
+            <span class="n">asset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_asset_by_key</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;asset_key&quot;</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">asset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">publish_msg</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;resp_queue&quot;</span><span class="p">],</span> <span class="p">{</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;response&#39;</span><span class="p">,</span> <span class="s1">&#39;response&#39;</span><span class="p">:</span> <span class="kc">None</span><span class="p">})</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">resp</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_asset_payload</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span>
+                <span class="n">publish_msg</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;resp_queue&quot;</span><span class="p">],</span> <span class="p">{</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;response&#39;</span><span class="p">,</span> <span class="s1">&#39;response&#39;</span><span class="p">:</span> <span class="n">resp</span><span class="p">})</span>
+
+        <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;update_asset_properties&quot;</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">update_asset_properties</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;asset_key&quot;</span><span class="p">],</span> <span class="n">msg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;properties&quot;</span><span class="p">,</span> <span class="p">{}))</span>
+                <span class="k">if</span> <span class="s2">&quot;resp_queue&quot;</span> <span class="ow">in</span> <span class="n">msg</span><span class="p">:</span>
+                    <span class="n">publish_msg</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;resp_queue&quot;</span><span class="p">],</span> <span class="p">{</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;response&#39;</span><span class="p">,</span> <span class="s1">&#39;response&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;ok&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}})</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">if</span> <span class="s2">&quot;resp_queue&quot;</span> <span class="ow">in</span> <span class="n">msg</span><span class="p">:</span>
+                    <span class="n">publish_msg</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;resp_queue&quot;</span><span class="p">],</span> <span class="p">{</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;response&#39;</span><span class="p">,</span> <span class="s1">&#39;response&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;ok&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)}})</span>
 
         <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;summarize&quot;</span><span class="p">:</span>
             <span class="n">resp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">summarize</span><span class="p">(</span><span class="n">display</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -756,25 +869,33 @@
             <span class="k">raise</span> <span class="ne">KeyboardInterrupt</span> <span class="c1"># then raise the interrupt</span>
         <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">_sigint_handler</span><span class="p">)</span>
 
-        <span class="c1"># run the message handling loop</span>
-        <span class="c1"># need a separate thread for this since conn.drain_events() blocks, and kombu isn&#39;t compatible with asyncio yet</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Starting fwirl messaging loop&quot;</span><span class="p">)</span>
-        <span class="n">th</span> <span class="o">=</span> <span class="n">Thread</span><span class="p">(</span><span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;fwirl_messaging_loop&quot;</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="n">listen</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">message_queue</span><span class="p">,),</span> <span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">th</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Starting fwirl job event loop&quot;</span><span class="p">)</span>
-        <span class="c1"># run the task executor/scheduler async</span>
+        <span class="n">registration_file</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">th</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">try</span><span class="p">:</span>
+            <span class="n">registration_file</span> <span class="o">=</span> <span class="n">register_graph_process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>
+            <span class="c1"># run the message handling loop</span>
+            <span class="c1"># need a separate thread for this since conn.drain_events() blocks, and kombu isn&#39;t compatible with asyncio yet</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Starting fwirl messaging loop&quot;</span><span class="p">)</span>
+            <span class="n">th</span> <span class="o">=</span> <span class="n">Thread</span><span class="p">(</span><span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;fwirl_messaging_loop&quot;</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="n">listen</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">message_queue</span><span class="p">,),</span> <span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">th</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Starting fwirl job event loop&quot;</span><span class="p">)</span>
+            <span class="c1"># run the task executor/scheduler async</span>
             <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_run</span><span class="p">())</span>
+        <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
         <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Caught keyboard interrupt; stopping main loop and messaging loop of asset graph </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="n">publish_msg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;shutdown&quot;</span><span class="p">})</span>
         <span class="k">except</span> <span class="n">ShutdownSignal</span><span class="p">:</span>
             <span class="c1"># this only happens if the messaging loop got the &quot;shutdown&quot; message, so it is already shutting itself down, no need to publish shutdown msg</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Caught shutdown signal; stopping main loop of asset graph </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">th</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
-        <span class="c1"># restore the original sigint handler</span>
-        <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">_original_sigint_handler</span><span class="p">)</span></div>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">th</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">th</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+            <span class="n">unregister_graph_process</span><span class="p">(</span><span class="n">registration_file</span><span class="p">)</span>
+            <span class="c1"># restore the original sigint handler</span>
+            <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">_original_sigint_handler</span><span class="p">)</span></div>
 
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -845,7 +966,7 @@
             <span class="c1"># if the message task is done, process it</span>
             <span class="k">if</span> <span class="n">message_task</span><span class="o">.</span><span class="n">done</span><span class="p">():</span>
                 <span class="n">msg</span> <span class="o">=</span> <span class="k">await</span> <span class="n">message_task</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_process_message</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_message</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
                 <span class="n">message_task</span> <span class="o">=</span> <span class="kc">None</span>
 
             <span class="c1"># if the job is done, clear it</span>
@@ -932,7 +1053,10 @@
         <span class="n">task_map</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">asset</span> <span class="ow">in</span> <span class="n">sorted_nodes</span><span class="p">:</span>
             <span class="n">coroutine</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_asset</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span>
-            <span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">wait_for_dependencies</span><span class="p">(</span><span class="n">coroutine</span><span class="p">,</span> <span class="p">[</span><span class="n">task_map</span><span class="p">[</span><span class="n">a</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">predecessors</span><span class="p">(</span><span class="n">asset</span><span class="p">)]))</span>
+            <span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">wait_for_dependencies</span><span class="p">(</span>
+                <span class="n">coroutine</span><span class="p">,</span>
+                <span class="p">[</span><span class="n">task_map</span><span class="p">[</span><span class="n">a</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">predecessors</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span> <span class="k">if</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">task_map</span><span class="p">],</span>
+            <span class="p">))</span>
             <span class="n">task_map</span><span class="p">[</span><span class="n">asset</span><span class="p">]</span> <span class="o">=</span> <span class="n">task</span>
 
         <span class="k">for</span> <span class="n">asset</span> <span class="ow">in</span> <span class="n">sorted_nodes</span><span class="p">:</span>
@@ -968,7 +1092,10 @@
             <span class="n">task_map</span> <span class="o">=</span> <span class="p">{}</span>
             <span class="k">for</span> <span class="n">asset</span> <span class="ow">in</span> <span class="n">sorted_nodes</span><span class="p">:</span>
                 <span class="n">coroutine</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_asset</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span>
-                <span class="n">_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">wait_for_dependencies</span><span class="p">(</span><span class="n">coroutine</span><span class="p">,</span> <span class="p">[</span><span class="n">task_map</span><span class="p">[</span><span class="n">a</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">predecessors</span><span class="p">(</span><span class="n">asset</span><span class="p">)]))</span>
+                <span class="n">_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">wait_for_dependencies</span><span class="p">(</span>
+                    <span class="n">coroutine</span><span class="p">,</span>
+                    <span class="p">[</span><span class="n">task_map</span><span class="p">[</span><span class="n">a</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">predecessors</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span> <span class="k">if</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">task_map</span><span class="p">],</span>
+                <span class="p">))</span>
                 <span class="n">coroutine</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_asset</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span>
                 <span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">wait_for_dependencies</span><span class="p">(</span><span class="n">coroutine</span><span class="p">,</span> <span class="p">[</span><span class="n">_task</span><span class="p">]))</span>
                 <span class="n">task_map</span><span class="p">[</span><span class="n">asset</span><span class="p">]</span> <span class="o">=</span> <span class="n">task</span>
@@ -1306,13 +1433,6 @@
     <span class="c1">#    node_sizes = [600 if node[0] == &quot;group&quot; else 100 for node in vizgraph]</span>
     <span class="c1">#    nx.draw(vizgraph, pos=pos, node_color=node_colors, node_size=node_sizes)</span>
     <span class="c1">#    plt.show()</span>
-
-
-
-
-
-
-
 </pre></div>
         </article>
       </div>
