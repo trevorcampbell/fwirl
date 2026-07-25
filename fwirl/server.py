@@ -226,6 +226,9 @@ def dashboard_html(graph_key):
     const selectionBox = document.getElementById("selection-box");
     const verticalResizer = document.getElementById("vertical-resizer");
     const horizontalResizer = document.getElementById("horizontal-resizer");
+    const NODE_SPACING = 190;
+    const LEVEL_SPACING = 150;
+    const COMPONENT_SPACING = 260;
     const statusColors = {{
       Current: "#22c55e",
       Stale: "#facc15",
@@ -259,19 +262,6 @@ def dashboard_html(graph_key):
           type: "cubicBezier",
           forceDirection: "vertical",
           roundness: 0.45
-        }}
-      }},
-      layout: {{
-        hierarchical: {{
-          enabled: true,
-          direction: "UD",
-          sortMethod: "directed",
-          levelSeparation: 120,
-          nodeSpacing: 180,
-          treeSpacing: 220,
-          blockShifting: true,
-          edgeMinimization: true,
-          parentCentralization: true
         }}
       }},
       interaction: {{
@@ -427,21 +417,30 @@ def dashboard_html(graph_key):
       return (latestSnapshot?.nodes || []).find((node) => node.key === assetKey) || null;
     }}
 
-    function computeNodeLevels(snapshot) {{
+    function computeGraphLayout(snapshot) {{
       const nodes = snapshot?.nodes || [];
       const edges = snapshot?.edges || [];
       const childrenByNode = new Map(nodes.map((node) => [node.key, []]));
+      const parentsByNode = new Map(nodes.map((node) => [node.key, []]));
+      const neighborsByNode = new Map(nodes.map((node) => [node.key, new Set()]));
       const incomingCounts = new Map(nodes.map((node) => [node.key, 0]));
       const levels = new Map(nodes.map((node) => [node.key, 0]));
+      const positions = new Map();
 
       for (const edge of edges) {{
-        if (!childrenByNode.has(edge.from) || !incomingCounts.has(edge.to)) continue;
+        if (!childrenByNode.has(edge.from) || !incomingCounts.has(edge.to) || !parentsByNode.has(edge.to)) continue;
         childrenByNode.get(edge.from).push(edge.to);
+        parentsByNode.get(edge.to).push(edge.from);
+        neighborsByNode.get(edge.from).add(edge.to);
+        neighborsByNode.get(edge.to).add(edge.from);
         incomingCounts.set(edge.to, incomingCounts.get(edge.to) + 1);
       }}
 
       for (const children of childrenByNode.values()) {{
         children.sort();
+      }}
+      for (const parents of parentsByNode.values()) {{
+        parents.sort();
       }}
 
       const queue = nodes
@@ -463,7 +462,135 @@ def dashboard_html(graph_key):
         }}
       }}
 
-      return levels;
+      const components = [];
+      const seen = new Set();
+
+      for (const node of nodes.map((entry) => entry.key).sort()) {{
+        if (seen.has(node)) continue;
+        const component = [];
+        const pendingNodes = [node];
+        seen.add(node);
+        while (pendingNodes.length > 0) {{
+          const current = pendingNodes.pop();
+          component.push(current);
+          for (const neighbor of Array.from(neighborsByNode.get(current) || []).sort()) {{
+            if (seen.has(neighbor)) continue;
+            seen.add(neighbor);
+            pendingNodes.push(neighbor);
+          }}
+        }}
+        components.push(component.sort());
+      }}
+
+      components.sort((a, b) => {{
+        const rootsFor = (component) => {{
+          const componentSet = new Set(component);
+          return component.filter((key) => (parentsByNode.get(key) || []).filter((parent) => componentSet.has(parent)).length === 0);
+        }};
+        const aRoots = rootsFor(a);
+        const bRoots = rootsFor(b);
+        const aKey = (aRoots.length > 0 ? aRoots : a)[0];
+        const bKey = (bRoots.length > 0 ? bRoots : b)[0];
+        return aKey.localeCompare(bKey);
+      }});
+
+      function median(values) {{
+        if (values.length === 0) return null;
+        const sorted = [...values].sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        return sorted.length % 2 === 1
+          ? sorted[middle]
+          : (sorted[middle - 1] + sorted[middle]) / 2;
+      }}
+
+      function neighborMedian(nodeKey, neighborKeys) {{
+        const xValues = neighborKeys
+          .map((neighbor) => positions.get(neighbor)?.x)
+          .filter((value) => typeof value === "number");
+        return median(xValues);
+      }}
+
+      function sortLevel(keys, scoreFn) {{
+        const previousOrder = new Map(keys.map((key, index) => [key, index]));
+        return [...keys].sort((left, right) => {{
+          const leftScore = scoreFn(left);
+          const rightScore = scoreFn(right);
+          if (leftScore == null && rightScore != null) return 1;
+          if (leftScore != null && rightScore == null) return -1;
+          if (leftScore != null && rightScore != null && leftScore !== rightScore) return leftScore - rightScore;
+          return (previousOrder.get(left) ?? 0) - (previousOrder.get(right) ?? 0) || left.localeCompare(right);
+        }});
+      }}
+
+      let componentOffset = 0;
+      for (const component of components) {{
+        const componentSet = new Set(component);
+        const levelBuckets = new Map();
+        for (const key of component) {{
+          const level = levels.get(key) || 0;
+          if (!levelBuckets.has(level)) levelBuckets.set(level, []);
+          levelBuckets.get(level).push(key);
+        }}
+
+        const orderedLevels = Array.from(levelBuckets.keys()).sort((a, b) => a - b);
+        const levelNodes = new Map(
+          orderedLevels.map((level) => [level, levelBuckets.get(level).slice().sort()])
+        );
+        const componentWidth = Math.max(
+          0,
+          ...Array.from(levelNodes.values()).map((keys) => (keys.length - 1) * NODE_SPACING)
+        );
+
+        function updateComponentPositions() {{
+          for (const level of orderedLevels) {{
+            const keys = levelNodes.get(level) || [];
+            const levelWidth = Math.max(0, (keys.length - 1) * NODE_SPACING);
+            const startX = componentOffset + (componentWidth - levelWidth) / 2;
+            keys.forEach((key, index) => {{
+              positions.set(key, {{
+                x: startX + index * NODE_SPACING,
+                y: level * LEVEL_SPACING,
+                level
+              }});
+            }});
+          }}
+        }}
+
+        updateComponentPositions();
+        for (let sweep = 0; sweep < 6; sweep += 1) {{
+          for (const level of orderedLevels.slice(1)) {{
+            const nextKeys = sortLevel(levelNodes.get(level) || [], (key) =>
+              neighborMedian(key, (parentsByNode.get(key) || []).filter((parent) => componentSet.has(parent)))
+            );
+            levelNodes.set(level, nextKeys);
+            updateComponentPositions();
+          }}
+          for (const level of orderedLevels.slice(0, -1).reverse()) {{
+            const nextKeys = sortLevel(levelNodes.get(level) || [], (key) =>
+              neighborMedian(key, (childrenByNode.get(key) || []).filter((child) => componentSet.has(child)))
+            );
+            levelNodes.set(level, nextKeys);
+            updateComponentPositions();
+          }}
+        }}
+
+        componentOffset += componentWidth + COMPONENT_SPACING;
+      }}
+
+      const clusterPositions = new Map();
+      for (const candidate of snapshot?.collapse_candidates || []) {{
+        const nodePositions = (candidate.node_keys || [])
+          .map((key) => positions.get(key))
+          .filter((entry) => entry);
+        if (nodePositions.length === 0) continue;
+        clusterPositions.set(candidate.id, {{
+          x: nodePositions.reduce((sum, entry) => sum + entry.x, 0) / nodePositions.length,
+          y: nodePositions.reduce((sum, entry) => sum + entry.y, 0) / nodePositions.length,
+          level: Math.min(...nodePositions.map((entry) => entry.level))
+        }});
+      }}
+
+      return {{ levels, positions, clusterPositions }};
     }}
 
     function graphSignature(snapshot) {{
@@ -477,7 +604,7 @@ def dashboard_html(graph_key):
       return JSON.stringify({{ nodeKeys, edgeKeys, collapseKeys }});
     }}
 
-    function replaceGraphData(nodes, edges, collapseCandidates) {{
+    function replaceGraphData(nodes, edges, collapseCandidates, clusterPositions) {{
       nodeData.clear();
       edgeData.clear();
       nodeData.add(nodes);
@@ -486,6 +613,7 @@ def dashboard_html(graph_key):
       for (const candidate of collapseCandidates || []) {{
         const clusterId = `cluster:${{candidate.id}}`;
         const nodeSet = new Set(candidate.node_keys || []);
+        const clusterPosition = clusterPositions?.get(candidate.id) || null;
         const clusterLevel = Math.min(
           ...(candidate.node_keys || []).map((key) => nodeData.get(key)?.level ?? 0)
         );
@@ -497,7 +625,10 @@ def dashboard_html(graph_key):
             color: statusColors[candidate.status] || "#9ca3af",
             shape: "box",
             borderWidth: 1,
-            level: Number.isFinite(clusterLevel) ? clusterLevel : 0
+            level: Number.isFinite(clusterLevel) ? clusterLevel : 0,
+            x: clusterPosition?.x,
+            y: clusterPosition?.y,
+            fixed: true
           }}
         }});
       }}
@@ -575,14 +706,17 @@ def dashboard_html(graph_key):
 
     async function fetchSnapshot() {{
       latestSnapshot = await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/snapshot`);
-      const levels = computeNodeLevels(latestSnapshot);
+      const layout = computeGraphLayout(latestSnapshot);
       const nodes = latestSnapshot.nodes.map(n => ({{
         id: n.key,
         label: n.key,
         color: {{ background: statusColors[n.status] || "#9ca3af", border: "#0b1220" }},
         title: `${{n.key}} (${{n.status}})`,
         properties: n.properties || {{}},
-        level: levels.get(n.key) || 0
+        level: layout.levels.get(n.key) || 0,
+        x: layout.positions.get(n.key)?.x,
+        y: layout.positions.get(n.key)?.y,
+        fixed: true
       }}));
       const edges = latestSnapshot.edges.map(e => ({{
         id: `${{e.from}}->${{e.to}}`,
@@ -591,8 +725,9 @@ def dashboard_html(graph_key):
       }}));
       const nextGraphSignature = graphSignature(latestSnapshot);
       if (nextGraphSignature !== renderedGraphSignature) {{
-        replaceGraphData(nodes, edges, latestSnapshot.collapse_candidates || []);
+        replaceGraphData(nodes, edges, latestSnapshot.collapse_candidates || [], layout.clusterPositions);
         renderedGraphSignature = nextGraphSignature;
+        network.fit({{ animation: false }});
       }} else {{
         updateGraphData(nodes);
       }}
