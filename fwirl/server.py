@@ -55,6 +55,8 @@ def dashboard_html(graph_key):
       --muted: #94a3b8;
       --accent: #38bdf8;
       --danger: #ef4444;
+      --detail-panel-width: 420px;
+      --top-panel-height: 56vh;
     }}
     body {{
       margin: 0;
@@ -64,7 +66,7 @@ def dashboard_html(graph_key):
     }}
     .page {{
       display: grid;
-      grid-template-rows: auto 1fr auto;
+      grid-template-rows: auto var(--top-panel-height) 8px minmax(220px, 1fr);
       height: 100vh;
       gap: 12px;
       padding: 12px;
@@ -83,8 +85,7 @@ def dashboard_html(graph_key):
     .header .meta {{ color: var(--muted); font-size: 13px; }}
     .layout {{
       display: grid;
-      grid-template-columns: minmax(520px, 2fr) minmax(380px, 1fr);
-      gap: 12px;
+      grid-template-columns: minmax(520px, 1fr) 8px minmax(320px, var(--detail-panel-width));
       min-height: 0;
     }}
     .panel {{
@@ -113,6 +114,22 @@ def dashboard_html(graph_key):
       display: none;
     }}
     #assets-table {{ flex: 1; min-height: 280px; }}
+    .resizer {{
+      background: rgba(148, 163, 184, 0.25);
+      border-radius: 999px;
+      transition: background 0.15s ease;
+    }}
+    .resizer:hover {{
+      background: rgba(56, 189, 248, 0.55);
+    }}
+    .resizer.vertical {{
+      cursor: col-resize;
+      min-height: 0;
+    }}
+    .resizer.horizontal {{
+      cursor: row-resize;
+      height: 8px;
+    }}
     .section-title {{ font-size: 14px; font-weight: 600; color: var(--muted); }}
     .detail-grid {{ display: grid; grid-template-columns: 120px 1fr; gap: 6px 10px; font-size: 13px; }}
     .detail-grid .k {{ color: var(--muted); }}
@@ -129,7 +146,7 @@ def dashboard_html(graph_key):
     .controls button {{ cursor: pointer; background: #0b2f40; border-color: #155e75; }}
     .controls button.secondary {{ background: #1f2937; border-color: #374151; }}
     .controls button.danger {{ background: #3f1117; border-color: #7f1d1d; }}
-    .actions {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }}
+    .actions {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }}
     .status-pill {{
       display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
     }}
@@ -175,19 +192,13 @@ def dashboard_html(graph_key):
           <div id="selection-box"></div>
         </div>
       </div>
+      <div id="vertical-resizer" class="resizer vertical"></div>
       <div class="panel">
         <div class="section-title">Asset Details</div>
         <div id="asset-detail" class="detail-grid"><div class="k">Selection</div><div>None</div></div>
         <div class="actions">
           <button id="build-btn">Build</button>
           <button id="refresh-btn">Refresh</button>
-          <button id="copy-btn">Copy</button>
-          <button id="remove-btn" class="danger">Remove</button>
-        </div>
-        <div class="section-title">Edit Dependencies</div>
-        <div class="controls">
-          <input id="deps-input" placeholder="comma-separated parent asset keys" />
-          <button id="deps-save-btn">Save dependencies</button>
         </div>
         <div class="section-title">Properties</div>
         <details open>
@@ -197,17 +208,9 @@ def dashboard_html(graph_key):
             <button id="properties-save-btn">Save properties</button>
           </div>
         </details>
-        <div class="section-title">Add Asset</div>
-        <div class="controls">
-          <input id="new-key" placeholder="asset key" />
-          <input id="new-deps" placeholder="dependencies (comma-separated keys)" />
-          <input id="new-group" placeholder="group (optional)" />
-          <input id="new-subgroup" placeholder="subgroup (optional)" />
-          <textarea id="new-properties" placeholder='properties JSON, e.g. {{"owner":"team-a"}}'></textarea>
-          <button id="add-btn">Add asset</button>
-        </div>
       </div>
     </div>
+    <div id="horizontal-resizer" class="resizer horizontal"></div>
     <div class="panel">
       <div class="section-title">Assets</div>
       <div id="assets-table"></div>
@@ -215,9 +218,13 @@ def dashboard_html(graph_key):
   </div>
   <script>
     const GRAPH_KEY = document.getElementById("graph-key").textContent;
+    const pageEl = document.querySelector(".page");
+    const layoutEl = document.querySelector(".layout");
     const graphWrap = document.getElementById("graph-wrap");
     const graphEl = document.getElementById("graph");
     const selectionBox = document.getElementById("selection-box");
+    const verticalResizer = document.getElementById("vertical-resizer");
+    const horizontalResizer = document.getElementById("horizontal-resizer");
     const statusColors = {{
       Current: "#22c55e",
       Stale: "#facc15",
@@ -233,7 +240,6 @@ def dashboard_html(graph_key):
     let latestSnapshot = null;
     let renderedGraphSignature = null;
     let boxSelection = null;
-    let connectDrag = null;
 
     const nodeData = new vis.DataSet([]);
     const edgeData = new vis.DataSet([]);
@@ -247,7 +253,25 @@ def dashboard_html(graph_key):
       edges: {{
         arrows: "to",
         color: "#64748b",
-        smooth: true
+        smooth: {{
+          enabled: true,
+          type: "cubicBezier",
+          forceDirection: "vertical",
+          roundness: 0.45
+        }}
+      }},
+      layout: {{
+        hierarchical: {{
+          enabled: true,
+          direction: "UD",
+          sortMethod: "directed",
+          levelSeparation: 120,
+          nodeSpacing: 180,
+          treeSpacing: 220,
+          blockShifting: true,
+          edgeMinimization: true,
+          parentCentralization: true
+        }}
       }},
       interaction: {{
         hover: true,
@@ -256,7 +280,7 @@ def dashboard_html(graph_key):
         dragNodes: false,
         dragView: false
       }},
-      physics: {{ stabilization: false }}
+      physics: false
     }});
 
     const table = new Tabulator("#assets-table", {{
@@ -280,7 +304,6 @@ def dashboard_html(graph_key):
           const properties = parseJsonField(cell.getValue(), {{}});
           await saveProperties(row.key, properties);
           await fetchSnapshot();
-          if (selectedAssets.includes(row.key)) await fetchAssetDetail(row.key);
         }} catch (error) {{
           alert(error.message);
           await fetchSnapshot();
@@ -291,18 +314,18 @@ def dashboard_html(graph_key):
     table.on("rowClick", (_, row) => {{
       const asset = row.getData();
       if (!asset || !asset.key) return;
-      setSelectedAssets([asset.key], true);
+      setSelectedAssets([asset.key]);
     }});
 
     network.on("click", (params) => {{
-      if (boxSelection || connectDrag) return;
+      if (boxSelection) return;
       if (params.nodes.length === 0) {{
         setSelectedAssets([]);
         return;
       }}
       const id = params.nodes[0];
       if (network.isCluster(id)) return;
-      setSelectedAssets([id], true);
+      setSelectedAssets([id]);
     }});
 
     network.on("doubleClick", (params) => {{
@@ -311,42 +334,11 @@ def dashboard_html(graph_key):
       if (network.isCluster(id)) network.openCluster(id);
     }});
 
-    network.on("afterDrawing", (ctx) => {{
-      if (!connectDrag) return;
-      const originPosition = network.getPositions([connectDrag.origin])[connectDrag.origin];
-      if (!originPosition) return;
-      const start = originPosition;
-      const end = connectDrag.currentCanvas;
-      ctx.save();
-      ctx.strokeStyle = statusColors.Stale;
-      ctx.fillStyle = statusColors.Stale;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.stroke();
-      const angle = Math.atan2(end.y - start.y, end.x - start.x);
-      const headLength = 10;
-      ctx.beginPath();
-      ctx.moveTo(end.x, end.y);
-      ctx.lineTo(end.x - headLength * Math.cos(angle - Math.PI / 6), end.y - headLength * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(end.x - headLength * Math.cos(angle + Math.PI / 6), end.y - headLength * Math.sin(angle + Math.PI / 6));
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }});
-
     graphWrap.addEventListener("mousedown", (event) => {{
       const rect = graphWrap.getBoundingClientRect();
       const point = {{ x: event.clientX - rect.left, y: event.clientY - rect.top }};
       const nodeId = network.getNodeAt(point);
       if (nodeId && !network.isCluster(nodeId)) {{
-        connectDrag = {{
-          origin: nodeId,
-          currentDom: point,
-          currentCanvas: network.DOMtoCanvas(point)
-        }};
-        network.redraw();
         return;
       }}
       boxSelection = {{ start: point, current: point }};
@@ -356,46 +348,20 @@ def dashboard_html(graph_key):
     window.addEventListener("mousemove", (event) => {{
       const rect = graphWrap.getBoundingClientRect();
       const point = {{ x: event.clientX - rect.left, y: event.clientY - rect.top }};
-      if (connectDrag) {{
-        connectDrag.currentDom = point;
-        connectDrag.currentCanvas = network.DOMtoCanvas(point);
-        network.redraw();
-        return;
-      }}
       if (!boxSelection) return;
       boxSelection.current = point;
       drawSelectionBox();
     }});
 
-    window.addEventListener("mouseup", async (event) => {{
+    window.addEventListener("mouseup", (event) => {{
       const rect = graphWrap.getBoundingClientRect();
       const point = {{ x: event.clientX - rect.left, y: event.clientY - rect.top }};
-      if (connectDrag) {{
-        const origin = connectDrag.origin;
-        const target = network.getNodeAt(point);
-        connectDrag = null;
-        network.redraw();
-        if (target && target !== origin && !network.isCluster(target)) {{
-          try {{
-            await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/dependencies`, {{
-              method: "POST",
-              body: JSON.stringify({{ parent_key: origin, child_key: target }})
-            }});
-            await fetchSnapshot();
-            await fetchAssetDetail(target);
-            setSelectedAssets([target], false);
-          }} catch (error) {{
-            alert(error.message);
-          }}
-        }}
-        return;
-      }}
       if (!boxSelection) return;
       boxSelection.current = point;
       const selected = nodesWithinSelection(boxSelection);
       boxSelection = null;
       selectionBox.style.display = "none";
-      setSelectedAssets(selected, selected.length === 1);
+      setSelectedAssets(selected);
     }});
 
     function drawSelectionBox() {{
@@ -428,10 +394,6 @@ def dashboard_html(graph_key):
       }});
     }}
 
-    function csvToList(v) {{
-      return (v || "").split(",").map(s => s.trim()).filter(Boolean);
-    }}
-
     function parseJsonField(value, fallback) {{
       const trimmed = (value || "").trim();
       if (!trimmed) return fallback;
@@ -449,6 +411,58 @@ def dashboard_html(graph_key):
 
     function propertiesText(properties) {{
       return JSON.stringify(properties || {{}});
+    }}
+
+    function escapeHtml(value) {{
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }}
+
+    function getSnapshotAsset(assetKey) {{
+      return (latestSnapshot?.nodes || []).find((node) => node.key === assetKey) || null;
+    }}
+
+    function computeNodeLevels(snapshot) {{
+      const nodes = snapshot?.nodes || [];
+      const edges = snapshot?.edges || [];
+      const childrenByNode = new Map(nodes.map((node) => [node.key, []]));
+      const incomingCounts = new Map(nodes.map((node) => [node.key, 0]));
+      const levels = new Map(nodes.map((node) => [node.key, 0]));
+
+      for (const edge of edges) {{
+        if (!childrenByNode.has(edge.from) || !incomingCounts.has(edge.to)) continue;
+        childrenByNode.get(edge.from).push(edge.to);
+        incomingCounts.set(edge.to, incomingCounts.get(edge.to) + 1);
+      }}
+
+      for (const children of childrenByNode.values()) {{
+        children.sort();
+      }}
+
+      const queue = nodes
+        .map((node) => node.key)
+        .filter((key) => incomingCounts.get(key) === 0)
+        .sort();
+      const pending = [...queue];
+
+      while (pending.length > 0) {{
+        const key = pending.shift();
+        const level = levels.get(key) || 0;
+        for (const child of childrenByNode.get(key) || []) {{
+          levels.set(child, Math.max(levels.get(child) || 0, level + 1));
+          incomingCounts.set(child, incomingCounts.get(child) - 1);
+          if (incomingCounts.get(child) === 0) {{
+            pending.push(child);
+            pending.sort();
+          }}
+        }}
+      }}
+
+      return levels;
     }}
 
     function graphSignature(snapshot) {{
@@ -471,6 +485,9 @@ def dashboard_html(graph_key):
       for (const candidate of collapseCandidates || []) {{
         const clusterId = `cluster:${{candidate.id}}`;
         const nodeSet = new Set(candidate.node_keys || []);
+        const clusterLevel = Math.min(
+          ...(candidate.node_keys || []).map((key) => nodeData.get(key)?.level ?? 0)
+        );
         network.cluster({{
           joinCondition: function(nodeOptions) {{ return nodeSet.has(nodeOptions.id); }},
           clusterNodeProperties: {{
@@ -478,7 +495,8 @@ def dashboard_html(graph_key):
             label: `${{candidate.group ?? "ungrouped"}}/${{candidate.subgroup ?? "default"}} (${{candidate.status}})`,
             color: statusColors[candidate.status] || "#9ca3af",
             shape: "box",
-            borderWidth: 1
+            borderWidth: 1,
+            level: Number.isFinite(clusterLevel) ? clusterLevel : 0
           }}
         }});
       }}
@@ -509,24 +527,23 @@ def dashboard_html(graph_key):
     function renderDetails(asset) {{
       if (!asset) {{
         document.getElementById("asset-detail").innerHTML = "<div class='k'>Selection</div><div>None</div>";
-        document.getElementById("deps-input").value = "";
         document.getElementById("properties-editor").value = "";
         return;
       }}
       document.getElementById("asset-detail").innerHTML = `
-        <div class="k">Key</div><div>${{asset.key}}</div>
+        <div class="k">Key</div><div>${{escapeHtml(asset.key)}}</div>
         <div class="k">Status</div><div>${{formatStatus(asset.status)}}</div>
-        <div class="k">Type</div><div>${{asset.type || ""}}</div>
-        <div class="k">Group</div><div>${{asset.group ?? ""}}</div>
-        <div class="k">Subgroup</div><div>${{asset.subgroup ?? ""}}</div>
-        <div class="k">Last Build</div><div>${{asset.last_build_timestamp ?? "N/A"}}</div>
-        <div class="k">Timestamp</div><div>${{asset.timestamp ?? "N/A"}}</div>
-        <div class="k">Message</div><div>${{asset.message || ""}}</div>
-        <div class="k">Parents</div><div>${{(asset.parents || []).join(", ")}}</div>
-        <div class="k">Children</div><div>${{(asset.children || []).join(", ")}}</div>
-        <div class="k">Properties</div><pre>${{propertiesText(asset.properties)}}</pre>
+        <div class="k">Type</div><div>${{escapeHtml(asset.type || "")}}</div>
+        <div class="k">Group</div><div>${{escapeHtml(asset.group ?? "")}}</div>
+        <div class="k">Subgroup</div><div>${{escapeHtml(asset.subgroup ?? "")}}</div>
+        <div class="k">Last Build</div><div>${{escapeHtml(asset.last_build_timestamp ?? "N/A")}}</div>
+        <div class="k">Timestamp</div><div>${{escapeHtml(asset.timestamp ?? "N/A")}}</div>
+        <div class="k">Allow Retry</div><div>${{escapeHtml(asset.allow_retry ?? "")}}</div>
+        <div class="k">Message</div><div>${{escapeHtml(asset.message || "")}}</div>
+        <div class="k">Parents</div><div>${{escapeHtml((asset.parents || []).join(", "))}}</div>
+        <div class="k">Children</div><div>${{escapeHtml((asset.children || []).join(", "))}}</div>
+        <div class="k">Properties</div><pre>${{escapeHtml(JSON.stringify(asset.properties || {{}}, null, 2))}}</pre>
       `;
-      document.getElementById("deps-input").value = (asset.parents || []).join(", ");
       document.getElementById("properties-editor").value = JSON.stringify(asset.properties || {{}}, null, 2);
     }}
 
@@ -557,12 +574,14 @@ def dashboard_html(graph_key):
 
     async function fetchSnapshot() {{
       latestSnapshot = await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/snapshot`);
+      const levels = computeNodeLevels(latestSnapshot);
       const nodes = latestSnapshot.nodes.map(n => ({{
         id: n.key,
         label: n.key,
         color: {{ background: statusColors[n.status] || "#9ca3af", border: "#0b1220" }},
         title: `${{n.key}} (${{n.status}})`,
-        properties: n.properties || {{}}
+        properties: n.properties || {{}},
+        level: levels.get(n.key) || 0
       }}));
       const edges = latestSnapshot.edges.map(e => ({{
         id: `${{e.from}}->${{e.to}}`,
@@ -594,11 +613,7 @@ def dashboard_html(graph_key):
       selectedAssets = selectedAssets.filter(key => latestSnapshot.nodes.some(node => node.key === key));
       selectedAsset = selectedAssets.length > 0 ? selectedAssets[0] : null;
       updateSelectionStyles();
-    }}
-
-    async function fetchAssetDetail(assetKey) {{
-      const asset = await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/assets/${{encodeURIComponent(assetKey)}}`);
-      renderDetails(asset);
+      renderDetails(selectedAsset ? getSnapshotAsset(selectedAsset) : null);
     }}
 
     async function saveProperties(assetKey, properties) {{
@@ -608,15 +623,11 @@ def dashboard_html(graph_key):
       }});
     }}
 
-    async function setSelectedAssets(assetKeys, fetchDetail=true) {{
+    function setSelectedAssets(assetKeys) {{
       selectedAssets = [...new Set(assetKeys)];
       selectedAsset = selectedAssets.length > 0 ? selectedAssets[0] : null;
       updateSelectionStyles();
-      if (fetchDetail && selectedAsset) {{
-        await fetchAssetDetail(selectedAsset);
-      }} else if (!selectedAsset) {{
-        renderDetails(null);
-      }}
+      renderDetails(selectedAsset ? getSnapshotAsset(selectedAsset) : null);
     }}
 
     async function triggerAction(action) {{
@@ -625,70 +636,50 @@ def dashboard_html(graph_key):
         method: "POST"
       }});
       await fetchSnapshot();
-      await fetchAssetDetail(selectedAsset);
     }}
 
     document.getElementById("build-btn").addEventListener("click", () => triggerAction("build"));
     document.getElementById("refresh-btn").addEventListener("click", () => triggerAction("refresh"));
-
-    document.getElementById("copy-btn").addEventListener("click", async () => {{
-      if (selectedAssets.length === 0) return;
-      const response = await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/assets/copy`, {{
-        method: "POST",
-        body: JSON.stringify({{ asset_keys: selectedAssets }})
-      }});
-      await fetchSnapshot();
-      await setSelectedAssets(response.asset_keys || [], true);
-    }});
-
-    document.getElementById("remove-btn").addEventListener("click", async () => {{
-      if (!selectedAsset) return;
-      await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/assets/${{encodeURIComponent(selectedAsset)}}`, {{
-        method: "DELETE"
-      }});
-      selectedAsset = null;
-      selectedAssets = [];
-      renderDetails(null);
-      await fetchSnapshot();
-    }});
-
-    document.getElementById("deps-save-btn").addEventListener("click", async () => {{
-      if (!selectedAsset) return;
-      await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/assets/${{encodeURIComponent(selectedAsset)}}/dependencies`, {{
-        method: "PUT",
-        body: JSON.stringify({{ dependencies: csvToList(document.getElementById("deps-input").value) }})
-      }});
-      await fetchSnapshot();
-      await fetchAssetDetail(selectedAsset);
-    }});
 
     document.getElementById("properties-save-btn").addEventListener("click", async () => {{
       if (!selectedAsset) return;
       const properties = parseJsonField(document.getElementById("properties-editor").value, {{}});
       await saveProperties(selectedAsset, properties);
       await fetchSnapshot();
-      await fetchAssetDetail(selectedAsset);
     }});
 
-    document.getElementById("add-btn").addEventListener("click", async () => {{
-      const key = document.getElementById("new-key").value.trim();
-      if (!key) return;
-      await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/assets`, {{
-        method: "POST",
-        body: JSON.stringify({{
-          asset_key: key,
-          dependencies: csvToList(document.getElementById("new-deps").value),
-          group: document.getElementById("new-group").value.trim() || null,
-          subgroup: document.getElementById("new-subgroup").value.trim() || null,
-          properties: parseJsonField(document.getElementById("new-properties").value, {{}})
-        }})
+    function installResizer(handle, onMove) {{
+      let dragging = false;
+      handle.addEventListener("mousedown", (event) => {{
+        event.preventDefault();
+        dragging = true;
+        document.body.style.userSelect = "none";
       }});
-      document.getElementById("new-key").value = "";
-      document.getElementById("new-deps").value = "";
-      document.getElementById("new-group").value = "";
-      document.getElementById("new-subgroup").value = "";
-      document.getElementById("new-properties").value = "";
-      await fetchSnapshot();
+      window.addEventListener("mousemove", (event) => {{
+        if (!dragging) return;
+        onMove(event);
+      }});
+      window.addEventListener("mouseup", () => {{
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.userSelect = "";
+      }});
+    }}
+
+    installResizer(verticalResizer, (event) => {{
+      const rect = layoutEl.getBoundingClientRect();
+      const width = rect.right - event.clientX;
+      const clamped = Math.max(320, Math.min(760, width));
+      document.documentElement.style.setProperty("--detail-panel-width", `${{clamped}}px`);
+    }});
+
+    installResizer(horizontalResizer, (event) => {{
+      const layoutRect = layoutEl.getBoundingClientRect();
+      const pageRect = pageEl.getBoundingClientRect();
+      const maxHeight = pageRect.bottom - layoutRect.top - horizontalResizer.offsetHeight - 220;
+      const height = event.clientY - layoutRect.top;
+      const clamped = Math.max(280, Math.min(maxHeight, height));
+      document.documentElement.style.setProperty("--top-panel-height", `${{clamped}}px`);
     }});
 
     (async () => {{
