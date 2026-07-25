@@ -296,6 +296,8 @@ class AssetGraph:
 
         subgroup_buckets = defaultdict(list)
         for asset in self.graph:
+            if asset.group is None and asset.subgroup is None:
+                continue
             group = '__nogroup__' if asset.group is None else str(asset.group)
             subgroup = '__nosubgroup__' if asset.subgroup is None else str(asset.subgroup)
             subgroup_buckets[(group, subgroup)].append(asset)
