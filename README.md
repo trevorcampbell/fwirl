@@ -2,7 +2,7 @@
 
 fwirl is a lightweight Python library for building and maintaining collections of **assets** (files, records, objects, etc.) with dependency tracking, stale detection, scheduling, and optional remote control.
 
-**Note:** LLMs were used to generate the package documentation (and will likely be used for development shortly). While the package is still in early unstable development, this may introduce bugs on `main`. 
+**Note:** LLMs were used to generate the package documentation, unit test suite, and much of the web UI. While the package is still in early unstable development, this may introduce bugs on `main`. 
 
 ## Features
 
