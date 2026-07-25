@@ -2,6 +2,7 @@ import asyncio
 import base64
 import glob
 import html
+import json
 import os
 import pickle
 import sys
@@ -662,11 +663,104 @@ def dashboard_html(graph_key):
       setInterval(fetchSnapshot, 10000);
     }})();
   </script>
+  <script>
+    localStorage.setItem("fwirl:lastGraphKey", {json.dumps(graph_key)});
+  </script>
+</body>
+</html>"""
+
+
+def landing_html():
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>fwirl dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    .card {
+      width: min(460px, calc(100vw - 32px));
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    h1 { margin: 0 0 10px; font-size: 24px; }
+    p { color: var(--muted); line-height: 1.5; }
+    form { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 18px; }
+    input, button {
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+    }
+    input {
+      background: rgba(15, 23, 42, 0.75);
+      color: var(--text);
+    }
+    button {
+      background: var(--accent);
+      color: #082f49;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    code {
+      background: rgba(15, 23, 42, 0.75);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>fwirl dashboard</h1>
+    <p>Open the dashboard for a running graph by entering its graph key below. The bundled examples use <code>test_graph</code>.</p>
+    <form id="graph-form">
+      <input id="graph-key" name="graph" placeholder="e.g. test_graph" autocomplete="off" />
+      <button type="submit">Open</button>
+    </form>
+  </main>
+  <script>
+    const input = document.getElementById("graph-key");
+    const requested = new URLSearchParams(window.location.search).get("graph");
+    const remembered = localStorage.getItem("fwirl:lastGraphKey");
+    if (requested) {
+      input.value = requested;
+    } else if (remembered) {
+      input.value = remembered;
+    }
+    document.getElementById("graph-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const key = input.value.trim();
+      if (key) {
+        window.location.href = `/ui/${encodeURIComponent(key)}`;
+      }
+    });
+  </script>
 </body>
 </html>"""
 
 
 def aiohttp_server():
+    async def get_root(request):
+        return web.Response(text=landing_html(), content_type="text/html")
+
     async def get_svg(request):
         graph_key = request.match_info["graph_key"]
         encoded = await asyncio.to_thread(getgraph, graph_key)
@@ -805,6 +899,7 @@ def aiohttp_server():
     app = web.Application()
     app.add_routes(
         [
+            web.get("/", get_root),
             web.get("/graphs/{graph_key}", get_svg),
             web.get("/ui/{graph_key}", get_ui),
             web.get("/api/graphs/{graph_key}/snapshot", get_snapshot),
