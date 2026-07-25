@@ -231,6 +231,7 @@ def dashboard_html(graph_key):
     let selectedAsset = null;
     let selectedAssets = [];
     let latestSnapshot = null;
+    let renderedGraphSignature = null;
     let boxSelection = null;
     let connectDrag = null;
 
@@ -450,6 +451,43 @@ def dashboard_html(graph_key):
       return JSON.stringify(properties || {{}});
     }}
 
+    function graphSignature(snapshot) {{
+      const nodeKeys = (snapshot.nodes || []).map((node) => node.key).sort();
+      const edgeKeys = (snapshot.edges || [])
+        .map((edge) => `${{edge.from}}->${{edge.to}}`)
+        .sort();
+      const collapseKeys = (snapshot.collapse_candidates || [])
+        .map((candidate) => `${{candidate.id}}:${{(candidate.node_keys || []).slice().sort().join(",")}}`)
+        .sort();
+      return JSON.stringify({{ nodeKeys, edgeKeys, collapseKeys }});
+    }}
+
+    function replaceGraphData(nodes, edges, collapseCandidates) {{
+      nodeData.clear();
+      edgeData.clear();
+      nodeData.add(nodes);
+      edgeData.add(edges);
+
+      for (const candidate of collapseCandidates || []) {{
+        const clusterId = `cluster:${{candidate.id}}`;
+        const nodeSet = new Set(candidate.node_keys || []);
+        network.cluster({{
+          joinCondition: function(nodeOptions) {{ return nodeSet.has(nodeOptions.id); }},
+          clusterNodeProperties: {{
+            id: clusterId,
+            label: `${{candidate.group ?? "ungrouped"}}/${{candidate.subgroup ?? "default"}} (${{candidate.status}})`,
+            color: statusColors[candidate.status] || "#9ca3af",
+            shape: "box",
+            borderWidth: 1
+          }}
+        }});
+      }}
+    }}
+
+    function updateGraphData(nodes) {{
+      nodeData.update(nodes);
+    }}
+
     function updateSelectionStyles() {{
       const selectedSet = new Set(selectedAssets);
       const updates = (latestSnapshot?.nodes || []).map((node) => ({{
@@ -531,24 +569,12 @@ def dashboard_html(graph_key):
         from: e.from,
         to: e.to
       }}));
-      nodeData.clear();
-      edgeData.clear();
-      nodeData.add(nodes);
-      edgeData.add(edges);
-
-      for (const candidate of latestSnapshot.collapse_candidates || []) {{
-        const clusterId = `cluster:${{candidate.id}}`;
-        const nodeSet = new Set(candidate.node_keys || []);
-        network.cluster({{
-          joinCondition: function(nodeOptions) {{ return nodeSet.has(nodeOptions.id); }},
-          clusterNodeProperties: {{
-            id: clusterId,
-            label: `${{candidate.group ?? "ungrouped"}}/${{candidate.subgroup ?? "default"}} (${{candidate.status}})`,
-            color: statusColors[candidate.status] || "#9ca3af",
-            shape: "box",
-            borderWidth: 1
-          }}
-        }});
+      const nextGraphSignature = graphSignature(latestSnapshot);
+      if (nextGraphSignature !== renderedGraphSignature) {{
+        replaceGraphData(nodes, edges, latestSnapshot.collapse_candidates || []);
+        renderedGraphSignature = nextGraphSignature;
+      }} else {{
+        updateGraphData(nodes);
       }}
 
       const tableRows = latestSnapshot.nodes.map(n => ({{
