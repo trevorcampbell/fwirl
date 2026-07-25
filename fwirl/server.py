@@ -40,6 +40,15 @@ def getgraph(graph_key, rabbit_url=__RABBIT_URL__):
 
 def dashboard_html(graph_key):
     safe_graph_key = html.escape(graph_key)
+    # json.dumps does not escape < > & which are dangerous inside <script> tags;
+    # replace them with their Unicode escape sequences so the value is safe
+    # regardless of the surrounding HTML context.
+    safe_graph_key_js = (
+        json.dumps(graph_key)
+        .replace("<", r"\u003c")
+        .replace(">", r"\u003e")
+        .replace("&", r"\u0026")
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -828,7 +837,7 @@ def dashboard_html(graph_key):
     }})();
   </script>
   <script>
-    localStorage.setItem("fwirl:lastGraphKey", {json.dumps(graph_key)});
+    localStorage.setItem("fwirl:lastGraphKey", {safe_graph_key_js});
   </script>
 </body>
 </html>"""
