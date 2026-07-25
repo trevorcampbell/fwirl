@@ -29,5 +29,12 @@ classifiers = [
   "Programming Language :: Python"
 ]
 
+[project.optional-dependencies]
+docs = [
+  "sphinx>=7",
+  "furo",
+  "sphinx-autodoc-typehints",
+]
+
 [project.scripts]
 fwirl = "fwirl.cli:cli"
