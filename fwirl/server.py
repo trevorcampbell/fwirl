@@ -14,7 +14,8 @@ from aiohttp import web
 from coolname import generate_slug
 from loguru import logger
 
-from .message import __RABBIT_URL__, get_msg, list_running_graphs, publish_msg
+from .message import __RABBIT_URL__, get_msg, publish_msg
+from .registry import list_running_graphs
 
 __SERVERPORT__ = 8081
 
