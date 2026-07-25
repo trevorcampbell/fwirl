@@ -1,5 +1,6 @@
 import click
 from .api import (
+                 list_graphs as api_list_graphs,
                  summarize as api_summarize,
                  ls as api_ls,
                  refresh as api_refresh,
@@ -19,6 +20,11 @@ from .message import __RABBIT_URL__
 @click.group()
 def cli():
     pass
+
+@click.command()
+def list_graphs():
+    api_list_graphs()
+cli.add_command(list_graphs)
 
 @click.command()
 @click.argument("graph")
@@ -108,5 +114,4 @@ webserver.add_command(start)
 def stop():
     stop_webserver()
 webserver.add_command(stop)
-
 

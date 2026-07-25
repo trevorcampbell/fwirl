@@ -14,7 +14,7 @@ from enum import Enum
 from queue import Queue as ThreadSafeQueue, Empty
 from threading import Thread
 from coolname import generate_slug
-from .message import publish_msg, listen
+from .message import publish_msg, listen, register_graph_process, unregister_graph_process
 import signal
 import inspect
 import pickle
@@ -753,15 +753,18 @@ class AssetGraph:
             raise KeyboardInterrupt # then raise the interrupt
         signal.signal(signal.SIGINT, _sigint_handler)
 
-        # run the message handling loop
-        # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
-        logger.info(f"Starting fwirl messaging loop")
-        th = Thread(name = "fwirl_messaging_loop", target=listen, args=(self.key, self.message_queue,), daemon=True)
-        th.start()
-
-        logger.info(f"Starting fwirl job event loop")
-        # run the task executor/scheduler async
+        registration_file = None
+        th = None
         try:
+            registration_file = register_graph_process(self.key)
+            # run the message handling loop
+            # need a separate thread for this since conn.drain_events() blocks, and kombu isn't compatible with asyncio yet
+            logger.info(f"Starting fwirl messaging loop")
+            th = Thread(name = "fwirl_messaging_loop", target=listen, args=(self.key, self.message_queue,), daemon=True)
+            th.start()
+
+            logger.info(f"Starting fwirl job event loop")
+            # run the task executor/scheduler async
             asyncio.run(self._run())
         except KeyboardInterrupt:
             logger.info(f"Caught keyboard interrupt; stopping main loop and messaging loop of asset graph {self.key}")
@@ -769,9 +772,12 @@ class AssetGraph:
         except ShutdownSignal:
             # this only happens if the messaging loop got the "shutdown" message, so it is already shutting itself down, no need to publish shutdown msg
             logger.info(f"Caught shutdown signal; stopping main loop of asset graph {self.key}")
-        th.join()
-        # restore the original sigint handler
-        signal.signal(signal.SIGINT, _original_sigint_handler)
+        finally:
+            if th is not None:
+                th.join()
+            unregister_graph_process(registration_file)
+            # restore the original sigint handler
+            signal.signal(signal.SIGINT, _original_sigint_handler)
 
     async def _run(self):
         message_task = None
@@ -1292,4 +1298,3 @@ class AssetGraph:
     #    node_sizes = [600 if node[0] == "group" else 100 for node in vizgraph]
     #    nx.draw(vizgraph, pos=pos, node_color=node_colors, node_size=node_sizes)
     #    plt.show()
-

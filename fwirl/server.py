@@ -15,7 +15,7 @@ from aiohttp import web
 from coolname import generate_slug
 from loguru import logger
 
-from .message import __RABBIT_URL__, get_msg, publish_msg
+from .message import __RABBIT_URL__, get_msg, list_running_graphs, publish_msg
 
 __SERVERPORT__ = 8081
 
@@ -704,13 +704,13 @@ def landing_html():
     h1 { margin: 0 0 10px; font-size: 24px; }
     p { color: var(--muted); line-height: 1.5; }
     form { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 18px; }
-    input, button {
+    select, button {
       border: 1px solid rgba(148, 163, 184, 0.35);
       border-radius: 10px;
       padding: 10px 12px;
       font: inherit;
     }
-    input {
+    select {
       background: rgba(15, 23, 42, 0.75);
       color: var(--text);
     }
@@ -719,6 +719,10 @@ def landing_html():
       color: #082f49;
       cursor: pointer;
       font-weight: 600;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
     code {
       background: rgba(15, 23, 42, 0.75);
@@ -730,21 +734,53 @@ def landing_html():
 <body>
   <main class="card">
     <h1>fwirl dashboard</h1>
-    <p>Open the dashboard for a running graph by entering its graph key below. The bundled examples use <code>test_graph</code>.</p>
+    <p id="graph-status">Choose a running graph to open its dashboard. The bundled examples use <code>test_graph</code>.</p>
     <form id="graph-form">
-      <input id="graph-key" name="graph" placeholder="e.g. test_graph" autocomplete="off" />
-      <button type="submit">Open</button>
+      <select id="graph-key" name="graph" disabled>
+        <option>Loading graphs...</option>
+      </select>
+      <button type="submit" id="open-button" disabled>Open</button>
     </form>
   </main>
   <script>
     const input = document.getElementById("graph-key");
+    const status = document.getElementById("graph-status");
+    const openButton = document.getElementById("open-button");
     const requested = new URLSearchParams(window.location.search).get("graph");
     const remembered = localStorage.getItem("fwirl:lastGraphKey");
-    if (requested) {
-      input.value = requested;
-    } else if (remembered) {
-      input.value = remembered;
+    async function loadGraphs() {
+      try {
+        const response = await fetch("/api/graphs");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        const graphs = Array.isArray(payload.graphs) ? payload.graphs : [];
+        input.innerHTML = "";
+        if (graphs.length === 0) {
+          input.disabled = true;
+          openButton.disabled = true;
+          input.innerHTML = '<option value="">No running graphs available</option>';
+          status.textContent = "No running graphs found. Start a graph and refresh this page.";
+          return;
+        }
+        for (const graph of graphs) {
+          const option = document.createElement("option");
+          option.value = graph;
+          option.textContent = graph;
+          input.appendChild(option);
+        }
+        const preferred = [requested, remembered].find((key) => key && graphs.includes(key)) || graphs[0];
+        input.value = preferred;
+        input.disabled = false;
+        openButton.disabled = false;
+        status.textContent = `${graphs.length} running graph${graphs.length === 1 ? "" : "s"} available.`;
+      } catch (error) {
+        input.disabled = true;
+        openButton.disabled = true;
+        input.innerHTML = '<option value="">Unable to load running graphs</option>';
+        status.textContent = `Unable to load running graphs: ${error.message}`;
+      }
     }
+    loadGraphs();
     document.getElementById("graph-form").addEventListener("submit", (event) => {
       event.preventDefault();
       const key = input.value.trim();
@@ -760,6 +796,9 @@ def landing_html():
 def aiohttp_server():
     async def get_root(request):
         return web.Response(text=landing_html(), content_type="text/html")
+
+    async def get_graphs(request):
+        return web.json_response({"graphs": list_running_graphs()})
 
     async def get_svg(request):
         graph_key = request.match_info["graph_key"]
@@ -900,6 +939,7 @@ def aiohttp_server():
     app.add_routes(
         [
             web.get("/", get_root),
+            web.get("/api/graphs", get_graphs),
             web.get("/graphs/{graph_key}", get_svg),
             web.get("/ui/{graph_key}", get_ui),
             web.get("/api/graphs/{graph_key}/snapshot", get_snapshot),
