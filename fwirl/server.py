@@ -7,7 +7,6 @@ import os
 import pickle
 import sys
 import tempfile
-import threading
 from queue import Queue
 
 import psutil
@@ -493,15 +492,27 @@ def dashboard_html(graph_key):
       document.getElementById("properties-editor").value = JSON.stringify(asset.properties || {{}}, null, 2);
     }}
 
+    function parseApiResponse(text) {{
+      if (!text) return null;
+      try {{
+        return JSON.parse(text);
+      }} catch (_error) {{
+        return text;
+      }}
+    }}
+
     async function api(path, opts={{}}) {{
       const res = await fetch(path, {{
         headers: {{ "Content-Type": "application/json" }},
         ...opts
       }});
       const text = await res.text();
-      const data = text ? JSON.parse(text) : null;
+      const data = parseApiResponse(text);
       if (!res.ok) {{
-        throw new Error(data?.error || text || `HTTP ${{res.status}}`);
+        throw new Error((data && typeof data === "object" ? data.error : null) || text || `HTTP ${{res.status}}`);
+      }}
+      if (data && typeof data === "string") {{
+        throw new Error(`Expected JSON response from ${{path}}`);
       }}
       return data;
     }}
@@ -975,10 +986,8 @@ def start_webserver():
         ) as temp_file:
             temp_file.write(str(fpid))
         sys.exit(0)
-
     logger.info(f"Starting webserver on port {__SERVERPORT__}...")
-    t = threading.Thread(target=run_server, args=(aiohttp_server(),))
-    t.start()
+    run_server(aiohttp_server())
 
 
 def stop_webserver():
