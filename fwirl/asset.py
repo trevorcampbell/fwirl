@@ -27,11 +27,11 @@ class AssetStatus(Enum):
 
 
 class Asset:
-    """Base class for a single node in an :class:`~fwirl.AssetGraph`.
+    """Abstract base class for a single node in an :class:`~fwirl.AssetGraph`.
 
-    :class:`Asset` can be used directly for manually managed assets created
-    through the UI, or subclassed to provide custom timestamp/build logic.
-    The default implementation records an in-memory timestamp when built.
+    Subclass :class:`Asset` and implement the :meth:`timestamp` and
+    :meth:`build` coroutines to define how fwirl should check whether an
+    asset is up-to-date and how to (re)build it.
 
     Args:
         key: A unique string identifier for this asset.
@@ -50,6 +50,17 @@ class Asset:
     Example::
 
         import fwirl
+        import pendulum as plm
+
+        class MyAsset(fwirl.Asset):
+            async def timestamp(self):
+                # Return the time the asset was last produced, or
+                # AssetStatus.Unavailable if it does not yet exist.
+                ...
+
+            async def build(self):
+                # Produce the asset.
+                ...
     """
 
     def __init__(self, key, dependencies, resources=None, group=None, subgroup=None, allow_retry=True, properties=None):
@@ -64,7 +75,6 @@ class Asset:
         self.allow_retry = allow_retry
         self.properties = {} if properties is None else dict(properties)
         self._last_build_timestamp = AssetStatus.Unavailable
-        self._ts = AssetStatus.Unavailable
 
     def __hash__(self):
         return self.hash
@@ -84,6 +94,7 @@ class Asset:
         """
         return self.key
 
+    @abstractmethod
     async def timestamp(self):
         """Return the timestamp of the most recently produced asset.
 
@@ -92,17 +103,17 @@ class Asset:
             last built, or :attr:`AssetStatus.Unavailable` if the asset
             does not yet exist.
         """
-        return self._ts
+        pass
 
+    @abstractmethod
     async def build(self):
         """Produce (or re-produce) this asset.
 
-        The default implementation marks the asset as freshly built in
-        memory. Subclasses may override this coroutine with custom build
-        behavior.
+        This coroutine is called by fwirl whenever the asset is stale or
+        unavailable.  Any return value is ignored; indicate failure by
+        raising an exception.
         """
-        self._ts = plm.now()
-        return
+        pass
 
 
 # Assets for which we can only obtain a value (no notion of a timestamp)
