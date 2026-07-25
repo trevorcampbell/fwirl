@@ -871,66 +871,6 @@ def aiohttp_server():
         )
         return web.json_response({"ok": True})
 
-    async def add_asset(request):
-        graph_key = request.match_info["graph_key"]
-        body = await request.json()
-        response = await asyncio.to_thread(
-            request_graph,
-            graph_key,
-            {
-                "type": "add_asset",
-                "asset_key": body["asset_key"],
-                "dependencies": body.get("dependencies", []),
-                "group": body.get("group"),
-                "subgroup": body.get("subgroup"),
-                "allow_retry": body.get("allow_retry", True),
-                "properties": body.get("properties", {}),
-                "paused": body.get("paused", False),
-            },
-        )
-        if response.get("ok"):
-            return web.json_response(response)
-        return web.json_response({"error": response.get("error", "Unable to add asset")}, status=400)
-
-    async def copy_assets(request):
-        graph_key = request.match_info["graph_key"]
-        body = await request.json()
-        response = await asyncio.to_thread(
-            request_graph,
-            graph_key,
-            {"type": "copy_assets", "asset_keys": body.get("asset_keys", [])},
-        )
-        if response.get("ok"):
-            return web.json_response(response)
-        return web.json_response({"error": response.get("error", "Unable to copy assets")}, status=400)
-
-    async def remove_asset(request):
-        graph_key = request.match_info["graph_key"]
-        asset_key = request.match_info["asset_key"]
-        response = await asyncio.to_thread(
-            request_graph, graph_key, {"type": "remove_asset", "asset_key": asset_key}
-        )
-        if response.get("ok"):
-            return web.json_response(response)
-        return web.json_response({"error": response.get("error", "Unable to remove asset")}, status=400)
-
-    async def update_dependencies(request):
-        graph_key = request.match_info["graph_key"]
-        asset_key = request.match_info["asset_key"]
-        body = await request.json()
-        response = await asyncio.to_thread(
-            request_graph,
-            graph_key,
-            {
-                "type": "update_asset_dependencies",
-                "asset_key": asset_key,
-                "dependencies": body.get("dependencies", []),
-            },
-        )
-        if response.get("ok"):
-            return web.json_response(response)
-        return web.json_response({"error": response.get("error", "Unable to update dependencies")}, status=400)
-
     async def update_properties(request):
         graph_key = request.match_info["graph_key"]
         asset_key = request.match_info["asset_key"]
@@ -948,22 +888,6 @@ def aiohttp_server():
             return web.json_response(response)
         return web.json_response({"error": response.get("error", "Unable to update properties")}, status=400)
 
-    async def add_dependency(request):
-        graph_key = request.match_info["graph_key"]
-        body = await request.json()
-        response = await asyncio.to_thread(
-            request_graph,
-            graph_key,
-            {
-                "type": "add_dependency",
-                "parent_key": body["parent_key"],
-                "child_key": body["child_key"],
-            },
-        )
-        if response.get("ok"):
-            return web.json_response(response)
-        return web.json_response({"error": response.get("error", "Unable to add dependency")}, status=400)
-
     app = web.Application()
     app.add_routes(
         [
@@ -973,14 +897,9 @@ def aiohttp_server():
             web.get("/ui/{graph_key}", get_ui),
             web.get("/api/graphs/{graph_key}/snapshot", get_snapshot),
             web.get("/api/graphs/{graph_key}/assets/{asset_key}", get_asset_detail),
-            web.post("/api/graphs/{graph_key}/assets/copy", copy_assets),
             web.post("/api/graphs/{graph_key}/assets/{asset_key}/build", trigger_build),
             web.post("/api/graphs/{graph_key}/assets/{asset_key}/refresh", trigger_refresh),
-            web.post("/api/graphs/{graph_key}/assets", add_asset),
-            web.delete("/api/graphs/{graph_key}/assets/{asset_key}", remove_asset),
-            web.put("/api/graphs/{graph_key}/assets/{asset_key}/dependencies", update_dependencies),
             web.put("/api/graphs/{graph_key}/assets/{asset_key}/properties", update_properties),
-            web.post("/api/graphs/{graph_key}/dependencies", add_dependency),
         ]
     )
     runner = web.AppRunner(app)

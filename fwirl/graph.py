@@ -324,23 +324,6 @@ class AssetGraph:
             }
         }
 
-    def add_asset(self, key, dependency_keys=None, group=None, subgroup=None, allow_retry=True, properties=None, paused=False):
-        if self._asset_by_key(key) is not None:
-            raise ValueError(f"Asset '{key}' already exists")
-        dependency_keys = [] if dependency_keys is None else dependency_keys
-        dependencies = []
-        for dep_key in dependency_keys:
-            dep = self._asset_by_key(dep_key)
-            if dep is None:
-                raise ValueError(f"Dependency '{dep_key}' not found")
-            dependencies.append(dep)
-        asset = Asset(key, dependencies, group=group, subgroup=subgroup, allow_retry=allow_retry, properties=properties)
-        self.add_assets([asset])
-        if paused:
-            asset.status = AssetStatus.Paused
-            asset.message = "Paused"
-        return asset
-
     def update_asset_properties(self, asset_key, properties):
         asset = self._asset_by_key(asset_key)
         if asset is None:
@@ -349,92 +332,6 @@ class AssetGraph:
             raise ValueError("Properties must be a dictionary")
         asset.properties = dict(properties)
         return asset
-
-    def update_asset_dependencies(self, asset_key, dependency_keys=None):
-        asset = self._asset_by_key(asset_key)
-        if asset is None:
-            raise ValueError(f"Asset '{asset_key}' not found")
-        old_dependencies = list(asset.dependencies)
-        dependency_keys = [] if dependency_keys is None else dependency_keys
-        new_dependencies = []
-        for dep_key in dependency_keys:
-            dep = self._asset_by_key(dep_key)
-            if dep is None:
-                raise ValueError(f"Dependency '{dep_key}' not found")
-            if dep == asset:
-                raise ValueError("Self-dependency loop detected")
-            new_dependencies.append(dep)
-        self.graph.remove_edges_from([(parent, asset) for parent in self.graph.predecessors(asset)])
-        self.graph.add_edges_from([(dep, asset) for dep in new_dependencies])
-        if not nx.is_directed_acyclic_graph(self.graph):
-            self.graph.remove_edges_from([(dep, asset) for dep in new_dependencies])
-            self.graph.add_edges_from([(parent, asset) for parent in old_dependencies])
-            raise ValueError("Dependency update introduces a cycle")
-        asset.dependencies = new_dependencies
-
-    def remove_asset_by_key(self, asset_key):
-        asset = self._asset_by_key(asset_key)
-        if asset is None:
-            raise ValueError(f"Asset '{asset_key}' not found")
-        self.remove_assets([asset])
-
-    def add_dependency(self, parent_key, child_key):
-        parent = self._asset_by_key(parent_key)
-        child = self._asset_by_key(child_key)
-        if parent is None:
-            raise ValueError(f"Parent asset '{parent_key}' not found")
-        if child is None:
-            raise ValueError(f"Child asset '{child_key}' not found")
-        if parent == child:
-            raise ValueError("Self-dependency loop detected")
-        dependency_keys = [dep.key for dep in child.dependencies]
-        if parent_key in dependency_keys:
-            return child
-        dependency_keys.append(parent_key)
-        self.update_asset_dependencies(child_key, dependency_keys)
-        return child
-
-    def copy_assets(self, asset_keys):
-        selected_assets = []
-        for asset_key in asset_keys:
-            asset = self._asset_by_key(asset_key)
-            if asset is None:
-                raise ValueError(f"Asset '{asset_key}' not found")
-            selected_assets.append(asset)
-        if len(selected_assets) == 0:
-            raise ValueError("No assets selected")
-
-        selected_set = set(selected_assets)
-        selected_graph = self.graph.subgraph(selected_set)
-        ordered_assets = list(nx.topological_sort(selected_graph))
-        suffix = generate_slug(2)
-        copied = {}
-        for asset in ordered_assets:
-            new_key = f"{asset.key}-{suffix}"
-            while self._asset_by_key(new_key) is not None or new_key in copied:
-                new_key = f"{asset.key}-{generate_slug(2)}"
-            dependencies = []
-            for dependency in asset.dependencies:
-                if dependency in copied:
-                    dependencies.append(copied[dependency])
-                else:
-                    dependencies.append(dependency)
-            new_asset = Asset(
-                new_key,
-                dependencies,
-                resources=list(asset.resources),
-                group=asset.group,
-                subgroup=asset.subgroup,
-                allow_retry=asset.allow_retry,
-                properties=dict(asset.properties),
-            )
-            copied[asset] = new_asset
-
-        self.add_assets(list(copied.values()))
-        for new_asset in copied.values():
-            new_asset.status = AssetStatus.Paused
-            new_asset.message = "Paused (copied asset)"
-        return list(copied.values())
 
     def schedule(self, schedule_key, action, cron_string='', asset=None, immediate_once=False):
         """Add a recurring (or one-shot) schedule to the graph.
@@ -605,64 +502,11 @@ class AssetGraph:
                 resp = await self._asset_payload(asset)
                 publish_msg(msg["resp_queue"], {'type': 'response', 'response': resp})
 
-        if msg["type"] == "add_asset":
-            try:
-                asset = self.add_asset(
-                    msg["asset_key"],
-                    dependency_keys=msg.get("dependencies"),
-                    group=msg.get("group"),
-                    subgroup=msg.get("subgroup"),
-                    allow_retry=msg.get("allow_retry", True),
-                    properties=msg.get("properties"),
-                    paused=msg.get("paused", False),
-                )
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True, "asset_key": asset.key}})
-            except Exception as e:
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
-
-        if msg["type"] == "remove_asset":
-            try:
-                self.remove_asset_by_key(msg["asset_key"])
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True}})
-            except Exception as e:
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
-
-        if msg["type"] == "update_asset_dependencies":
-            try:
-                self.update_asset_dependencies(msg["asset_key"], msg.get("dependencies"))
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True}})
-            except Exception as e:
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
-
         if msg["type"] == "update_asset_properties":
             try:
                 self.update_asset_properties(msg["asset_key"], msg.get("properties", {}))
                 if "resp_queue" in msg:
                     publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True}})
-            except Exception as e:
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
-
-        if msg["type"] == "add_dependency":
-            try:
-                self.add_dependency(msg["parent_key"], msg["child_key"])
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True}})
-            except Exception as e:
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
-
-        if msg["type"] == "copy_assets":
-            try:
-                copied = self.copy_assets(msg.get("asset_keys", []))
-                if "resp_queue" in msg:
-                    publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": True, "asset_keys": [asset.key for asset in copied]}})
             except Exception as e:
                 if "resp_queue" in msg:
                     publish_msg(msg["resp_queue"], {'type': 'response', 'response': {"ok": False, "error": str(e)}})
