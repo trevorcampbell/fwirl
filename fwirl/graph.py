@@ -766,6 +766,8 @@ class AssetGraph:
             logger.info(f"Starting fwirl job event loop")
             # run the task executor/scheduler async
             asyncio.run(self._run())
+        except ValueError as e:
+            logger.error(str(e))
         except KeyboardInterrupt:
             logger.info(f"Caught keyboard interrupt; stopping main loop and messaging loop of asset graph {self.key}")
             publish_msg(self.key, {"type": "shutdown"})

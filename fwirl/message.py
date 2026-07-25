@@ -53,6 +53,10 @@ def publish_msg(key, body, url = __RABBIT_URL__):
 
 
 def register_graph_process(graph_key, pid=None):
+    graphs = list_running_graphs()
+    if graph_key in graphs:
+        raise ValueError(f"Graph with name {graph_key} already exists") 
+    
     pid = os.getpid() if pid is None else pid
     process = psutil.Process(pid)
     graph_info = {
