@@ -209,6 +209,8 @@ def dashboard_html(graph_key):
         <div class="actions">
           <button id="build-btn">Build</button>
           <button id="refresh-btn">Refresh</button>
+          <button id="pause-btn">Pause all</button>
+          <button id="unpause-btn">Unpause all</button>
         </div>
         <div class="section-title">Properties</div>
         <details open>
@@ -661,6 +663,7 @@ def dashboard_html(graph_key):
       nodeData.update(updates);
       network.selectNodes(selectedAssets.filter(id => nodeData.get(id)));
       document.getElementById("selection-summary").textContent = `${{selectedAssets.length}} selected`;
+      updatePauseButtons();
       table.deselectRow();
       if (selectedAssets.length > 0) table.selectRow(selectedAssets);
     }}
@@ -768,6 +771,32 @@ def dashboard_html(graph_key):
       }});
     }}
 
+    function updatePauseButtons() {{
+      const suffix = selectedAssets.length === 0 ? "all" : `selected (${{selectedAssets.length}})`;
+      document.getElementById("pause-btn").textContent = `Pause ${{suffix}}`;
+      document.getElementById("unpause-btn").textContent = `Unpause ${{suffix}}`;
+    }}
+
+    // Applies to the selection, or to every asset when nothing is selected.
+    // Unpausing only touches paused assets, because unpausing marks an asset
+    // Stale and would otherwise force a rebuild of assets that were never paused.
+    async function setPaused(paused) {{
+      const scope = selectedAssets.length > 0
+        ? selectedAssets
+        : (latestSnapshot?.nodes || []).map((node) => node.key);
+      const keys = paused ? scope : scope.filter((key) => getSnapshotAsset(key)?.status === "Paused");
+      if (keys.length === 0) return;
+      try {{
+        await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/${{paused ? "pause" : "unpause"}}`, {{
+          method: "POST",
+          body: JSON.stringify({{ asset_keys: keys }})
+        }});
+        await fetchSnapshot();
+      }} catch (error) {{
+        alert(error.message);
+      }}
+    }}
+
     function setSelectedAssets(assetKeys) {{
       selectedAssets = [...new Set(assetKeys)];
       selectedAsset = selectedAssets.length > 0 ? selectedAssets[0] : null;
@@ -785,6 +814,8 @@ def dashboard_html(graph_key):
 
     document.getElementById("build-btn").addEventListener("click", () => triggerAction("build"));
     document.getElementById("refresh-btn").addEventListener("click", () => triggerAction("refresh"));
+    document.getElementById("pause-btn").addEventListener("click", () => setPaused(true));
+    document.getElementById("unpause-btn").addEventListener("click", () => setPaused(false));
 
     document.getElementById("properties-save-btn").addEventListener("click", async () => {{
       if (!selectedAsset) return;
@@ -1015,6 +1046,25 @@ def aiohttp_server():
         )
         return web.json_response({"ok": True})
 
+    def bulk_asset_action(action):
+        async def handler(request):
+            graph_key = request.match_info["graph_key"]
+            try:
+                body = await request.json()
+            except ValueError:
+                body = None
+            keys = body.get("asset_keys") if isinstance(body, dict) else None
+            if not isinstance(keys, list) or not all(isinstance(key, str) for key in keys):
+                return web.json_response({"error": "asset_keys must be a list of strings"}, status=400)
+
+            def send_all():
+                for key in keys:
+                    request_graph(graph_key, {"type": action, "key": key}, wait_for_response=False)
+
+            await asyncio.to_thread(send_all)
+            return web.json_response({"ok": True, "count": len(keys)})
+        return handler
+
     async def update_properties(request):
         graph_key = request.match_info["graph_key"]
         asset_key = request.match_info["asset_key"]
@@ -1043,6 +1093,8 @@ def aiohttp_server():
             web.get("/api/graphs/{graph_key}/assets/{asset_key}", get_asset_detail),
             web.post("/api/graphs/{graph_key}/assets/{asset_key}/build", trigger_build),
             web.post("/api/graphs/{graph_key}/assets/{asset_key}/refresh", trigger_refresh),
+            web.post("/api/graphs/{graph_key}/pause", bulk_asset_action("pause")),
+            web.post("/api/graphs/{graph_key}/unpause", bulk_asset_action("unpause")),
             web.put("/api/graphs/{graph_key}/assets/{asset_key}/properties", update_properties),
         ]
     )
