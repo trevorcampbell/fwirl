@@ -400,6 +400,19 @@ class AssetGraph:
         logger.info(f"Pausing asset {asset}")
         asset.status = AssetStatus.Paused
 
+    def set_allow_retry(self, asset, allow_retry):
+        """Set whether a failed asset is retried on the next build pass.
+
+        See the ``allow_retry`` argument of :class:`~fwirl.Asset`.
+
+        Args:
+            asset: The :class:`~fwirl.Asset` to update.
+            allow_retry: ``True`` to retry failures automatically, ``False``
+                to keep the asset ``Failed`` until it is manually unpaused.
+        """
+        logger.info(f"Setting allow_retry={allow_retry} for asset {asset}")
+        asset.allow_retry = allow_retry
+
     def unpause_schedule(self, schedule_key):
         """Resume a previously paused schedule.
 
@@ -548,6 +561,11 @@ class AssetGraph:
                 self.unpause_asset(asset)
             if msg["key"] in self.schedules:
                 self.unpause_schedule(msg["key"])
+
+        if msg["type"] == "set_allow_retry":
+            asset = self._asset_by_key(msg["key"])
+            if asset is not None and isinstance(msg.get("value"), bool):
+                self.set_allow_retry(asset, msg["value"])
 
         if msg["type"] == "schedule":
             asset = None

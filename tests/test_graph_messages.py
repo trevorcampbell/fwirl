@@ -236,6 +236,30 @@ class TestUpdateAssetPropertiesMessage:
 
 
 # ---------------------------------------------------------------------------
+# set_allow_retry message
+# ---------------------------------------------------------------------------
+
+class TestSetAllowRetryMessage:
+    @pytest.mark.parametrize("value", [True, False])
+    async def test_sets_allow_retry(self, value):
+        a = MemoryAsset("retry-asset", allow_retry=not value)
+        g = _graph_with(a)
+        await g._process_message({"type": "set_allow_retry", "key": "retry-asset", "value": value})
+        assert a.allow_retry is value
+
+    async def test_unknown_key_is_ignored(self):
+        g = AssetGraph("g")
+        await g._process_message({"type": "set_allow_retry", "key": "nope", "value": False})
+
+    @pytest.mark.parametrize("value", ["no", 0, None])
+    async def test_non_boolean_value_is_ignored(self, value):
+        a = MemoryAsset("retry-asset2", allow_retry=True)
+        g = _graph_with(a)
+        await g._process_message({"type": "set_allow_retry", "key": "retry-asset2", "value": value})
+        assert a.allow_retry is True
+
+
+# ---------------------------------------------------------------------------
 # None message (timeout)
 # ---------------------------------------------------------------------------
 

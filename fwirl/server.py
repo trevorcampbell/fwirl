@@ -211,6 +211,8 @@ def dashboard_html(graph_key):
           <button id="refresh-btn">Refresh</button>
           <button id="pause-btn">Pause all</button>
           <button id="unpause-btn">Unpause all</button>
+          <button id="allow-retry-btn">Allow retry all</button>
+          <button id="disallow-retry-btn">Disallow retry all</button>
         </div>
         <div class="section-title">Properties</div>
         <details open>
@@ -663,7 +665,7 @@ def dashboard_html(graph_key):
       nodeData.update(updates);
       network.selectNodes(selectedAssets.filter(id => nodeData.get(id)));
       document.getElementById("selection-summary").textContent = `${{selectedAssets.length}} selected`;
-      updatePauseButtons();
+      updateBulkButtons();
       table.deselectRow();
       if (selectedAssets.length > 0) table.selectRow(selectedAssets);
     }}
@@ -771,31 +773,45 @@ def dashboard_html(graph_key):
       }});
     }}
 
-    function updatePauseButtons() {{
+    function updateBulkButtons() {{
       const suffix = selectedAssets.length === 0 ? "all" : `selected (${{selectedAssets.length}})`;
       document.getElementById("pause-btn").textContent = `Pause ${{suffix}}`;
       document.getElementById("unpause-btn").textContent = `Unpause ${{suffix}}`;
+      document.getElementById("allow-retry-btn").textContent = `Allow retry ${{suffix}}`;
+      document.getElementById("disallow-retry-btn").textContent = `Disallow retry ${{suffix}}`;
     }}
 
-    // Applies to the selection, or to every asset when nothing is selected.
-    // Unpausing only touches paused assets, because unpausing marks an asset
-    // Stale and would otherwise force a rebuild of assets that were never paused.
-    async function setPaused(paused) {{
-      const scope = selectedAssets.length > 0
+    // Bulk actions apply to the selection, or to every asset when nothing is selected.
+    async function bulkAction(path, keepAsset) {{
+      const keys = selectedAssets.length > 0
         ? selectedAssets
         : (latestSnapshot?.nodes || []).map((node) => node.key);
-      const keys = paused ? scope : scope.filter((key) => getSnapshotAsset(key)?.status === "Paused");
-      if (keys.length === 0) return;
+      const targets = keys.filter((key) => {{
+        const asset = getSnapshotAsset(key);
+        return asset && keepAsset(asset);
+      }});
+      if (targets.length === 0) return;
       try {{
-        await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/${{paused ? "pause" : "unpause"}}`, {{
+        await api(`/api/graphs/${{encodeURIComponent(GRAPH_KEY)}}/${{path}}`, {{
           method: "POST",
-          body: JSON.stringify({{ asset_keys: keys }})
+          body: JSON.stringify({{ asset_keys: targets }})
         }});
         await fetchSnapshot();
       }} catch (error) {{
         alert(error.message);
       }}
     }}
+
+    const setPaused = (paused) => bulkAction(
+      paused ? "pause" : "unpause",
+      // Unpausing only touches paused assets: it marks an asset Stale, which
+      // would otherwise force a rebuild of assets that were never paused.
+      (asset) => paused || asset.status === "Paused"
+    );
+    const setAllowRetry = (allow) => bulkAction(
+      allow ? "allow-retry" : "disallow-retry",
+      (asset) => asset.allow_retry !== allow
+    );
 
     function setSelectedAssets(assetKeys) {{
       selectedAssets = [...new Set(assetKeys)];
@@ -816,6 +832,8 @@ def dashboard_html(graph_key):
     document.getElementById("refresh-btn").addEventListener("click", () => triggerAction("refresh"));
     document.getElementById("pause-btn").addEventListener("click", () => setPaused(true));
     document.getElementById("unpause-btn").addEventListener("click", () => setPaused(false));
+    document.getElementById("allow-retry-btn").addEventListener("click", () => setAllowRetry(true));
+    document.getElementById("disallow-retry-btn").addEventListener("click", () => setAllowRetry(false));
 
     document.getElementById("properties-save-btn").addEventListener("click", async () => {{
       if (!selectedAsset) return;
@@ -1046,7 +1064,7 @@ def aiohttp_server():
         )
         return web.json_response({"ok": True})
 
-    def bulk_asset_action(action):
+    def bulk_asset_action(make_message):
         async def handler(request):
             graph_key = request.match_info["graph_key"]
             try:
@@ -1059,7 +1077,7 @@ def aiohttp_server():
 
             def send_all():
                 for key in keys:
-                    request_graph(graph_key, {"type": action, "key": key}, wait_for_response=False)
+                    request_graph(graph_key, make_message(key), wait_for_response=False)
 
             await asyncio.to_thread(send_all)
             return web.json_response({"ok": True, "count": len(keys)})
@@ -1093,8 +1111,16 @@ def aiohttp_server():
             web.get("/api/graphs/{graph_key}/assets/{asset_key}", get_asset_detail),
             web.post("/api/graphs/{graph_key}/assets/{asset_key}/build", trigger_build),
             web.post("/api/graphs/{graph_key}/assets/{asset_key}/refresh", trigger_refresh),
-            web.post("/api/graphs/{graph_key}/pause", bulk_asset_action("pause")),
-            web.post("/api/graphs/{graph_key}/unpause", bulk_asset_action("unpause")),
+            web.post("/api/graphs/{graph_key}/pause", bulk_asset_action(lambda key: {"type": "pause", "key": key})),
+            web.post("/api/graphs/{graph_key}/unpause", bulk_asset_action(lambda key: {"type": "unpause", "key": key})),
+            web.post(
+                "/api/graphs/{graph_key}/allow-retry",
+                bulk_asset_action(lambda key: {"type": "set_allow_retry", "key": key, "value": True}),
+            ),
+            web.post(
+                "/api/graphs/{graph_key}/disallow-retry",
+                bulk_asset_action(lambda key: {"type": "set_allow_retry", "key": key, "value": False}),
+            ),
             web.put("/api/graphs/{graph_key}/assets/{asset_key}/properties", update_properties),
         ]
     )

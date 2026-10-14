@@ -151,6 +151,17 @@ class TestBulkPauseRoutes:
         ]
         assert all(c.kwargs == {"wait_for_response": False} for c in rg.call_args_list)
 
+    @pytest.mark.parametrize("route,value", [("allow-retry", True), ("disallow-retry", False)])
+    async def test_retry_routes_send_set_allow_retry(self, route, value):
+        with patch("fwirl.server.request_graph") as rg:
+            status, payload = await self._post(f"/api/graphs/g/{route}", {"asset_keys": ["a", "b"]})
+        assert status == 200
+        assert payload == {"ok": True, "count": 2}
+        assert [c.args for c in rg.call_args_list] == [
+            ("g", {"type": "set_allow_retry", "key": "a", "value": value}),
+            ("g", {"type": "set_allow_retry", "key": "b", "value": value}),
+        ]
+
     @pytest.mark.parametrize("body", [{}, {"asset_keys": "a"}, {"asset_keys": [1]}, []])
     async def test_rejects_invalid_body(self, body):
         with patch("fwirl.server.request_graph") as rg:
@@ -172,3 +183,8 @@ class TestDashboardPauseButtons:
         html = dashboard_html("g")
         assert 'id="pause-btn"' in html
         assert 'id="unpause-btn"' in html
+
+    def test_contains_retry_buttons(self):
+        html = dashboard_html("g")
+        assert 'id="allow-retry-btn"' in html
+        assert 'id="disallow-retry-btn"' in html
