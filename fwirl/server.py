@@ -55,7 +55,18 @@ def dashboard_html(graph_key):
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>fwirl dashboard - {safe_graph_key}</title>
-  <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator_midnight.min.css" rel="stylesheet">
+  <script>
+    (function() {{
+      let theme = "dark";
+      try {{
+        const saved = localStorage.getItem("fwirl:theme");
+        if (saved === "light" || saved === "dark") theme = saved;
+        else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+      }} catch (_error) {{}}
+      document.documentElement.setAttribute("data-theme", theme);
+    }})();
+  </script>
+  <link id="tabulator-theme" href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator_midnight.min.css" rel="stylesheet">
   <style>
     :root {{
       --bg: #0f172a;
@@ -65,8 +76,38 @@ def dashboard_html(graph_key):
       --muted: #94a3b8;
       --accent: #38bdf8;
       --danger: #ef4444;
+      --border: #334155;
+      --input-bg: #0b1220;
+      --btn-bg: #0b2f40;
+      --btn-border: #155e75;
+      --btn-secondary-bg: #1f2937;
+      --btn-secondary-border: #374151;
+      --btn-danger-bg: #3f1117;
+      --btn-danger-border: #7f1d1d;
+      --pre-text: #cbd5e1;
+      --resizer: rgba(148, 163, 184, 0.25);
+      --selection-fill: rgba(56, 189, 248, 0.12);
       --detail-panel-width: 420px;
       --top-panel-height: 56vh;
+    }}
+    :root[data-theme="light"] {{
+      --bg: #f1f5f9;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #0284c7;
+      --border: #cbd5e1;
+      --input-bg: #ffffff;
+      --btn-bg: #e0f2fe;
+      --btn-border: #7dd3fc;
+      --btn-secondary-bg: #f1f5f9;
+      --btn-secondary-border: #cbd5e1;
+      --btn-danger-bg: #fee2e2;
+      --btn-danger-border: #fca5a5;
+      --pre-text: #334155;
+      --resizer: rgba(100, 116, 139, 0.3);
+      --selection-fill: rgba(2, 132, 199, 0.12);
     }}
     body {{
       margin: 0;
@@ -119,13 +160,13 @@ def dashboard_html(graph_key):
     #selection-box {{
       position: absolute;
       border: 1px dashed var(--accent);
-      background: rgba(56, 189, 248, 0.12);
+      background: var(--selection-fill);
       pointer-events: none;
       display: none;
     }}
     #assets-table {{ flex: 1; min-height: 280px; }}
     .resizer {{
-      background: rgba(148, 163, 184, 0.25);
+      background: var(--resizer);
       border-radius: 999px;
       transition: background 0.15s ease;
     }}
@@ -146,16 +187,16 @@ def dashboard_html(graph_key):
     .controls {{ display: grid; gap: 6px; }}
     .controls input, .controls textarea, .controls button {{
       border-radius: 8px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       padding: 8px;
-      background: #0b1220;
+      background: var(--input-bg);
       color: var(--text);
       font: inherit;
     }}
     .controls textarea {{ min-height: 80px; resize: vertical; }}
-    .controls button {{ cursor: pointer; background: #0b2f40; border-color: #155e75; }}
-    .controls button.secondary {{ background: #1f2937; border-color: #374151; }}
-    .controls button.danger {{ background: #3f1117; border-color: #7f1d1d; }}
+    .controls button {{ cursor: pointer; background: var(--btn-bg); border-color: var(--btn-border); }}
+    .controls button.secondary {{ background: var(--btn-secondary-bg); border-color: var(--btn-secondary-border); }}
+    .controls button.danger {{ background: var(--btn-danger-bg); border-color: var(--btn-danger-border); }}
     .actions {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }}
     .status-pill {{
       display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
@@ -169,8 +210,8 @@ def dashboard_html(graph_key):
       font-size: 13px;
     }}
     details {{
-      background: #0b1220;
-      border: 1px solid #334155;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px;
     }}
@@ -179,7 +220,18 @@ def dashboard_html(graph_key):
       white-space: pre-wrap;
       word-break: break-word;
       font-size: 12px;
-      color: #cbd5e1;
+      color: var(--pre-text);
+    }}
+    .header-right {{ display: flex; align-items: center; gap: 12px; }}
+    #theme-toggle {{
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      background: var(--input-bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
     }}
   </style>
   <script src="https://unpkg.com/vis-network@9.1.10/dist/vis-network.min.js"></script>
@@ -189,7 +241,10 @@ def dashboard_html(graph_key):
   <div class="page">
     <div class="header">
       <h1>fwirl Dashboard</h1>
-      <div class="meta">Graph: <b id="graph-key">{safe_graph_key}</b> · <span id="summary">Loading...</span></div>
+      <div class="header-right">
+        <div class="meta">Graph: <b id="graph-key">{safe_graph_key}</b> · <span id="summary">Loading...</span></div>
+        <button id="theme-toggle" type="button" aria-label="Toggle dark mode"></button>
+      </div>
     </div>
     <div class="layout">
       <div class="panel">
@@ -248,6 +303,29 @@ def dashboard_html(graph_key):
       Failed: "#ef4444"
     }};
 
+    const THEMES = {{
+      dark: {{
+        font: "#e2e8f0",
+        edge: "#64748b",
+        nodeBorder: "#0b1220",
+        selectedBorder: "#f8fafc",
+        tabulator: "https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator_midnight.min.css"
+      }},
+      light: {{
+        font: "#0f172a",
+        edge: "#94a3b8",
+        nodeBorder: "#e2e8f0",
+        selectedBorder: "#0f172a",
+        tabulator: "https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css"
+      }}
+    }};
+    function currentTheme() {{
+      return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    }}
+    function themeColors() {{
+      return THEMES[currentTheme()];
+    }}
+
     let selectedAsset = null;
     let selectedAssets = [];
     let latestSnapshot = null;
@@ -261,11 +339,11 @@ def dashboard_html(graph_key):
         shape: "dot",
         size: 18,
         borderWidth: 1,
-        font: {{ color: "#e2e8f0" }}
+        font: {{ color: themeColors().font }}
       }},
       edges: {{
         arrows: "to",
-        color: "#64748b",
+        color: themeColors().edge,
         smooth: {{
           enabled: true,
           type: "cubicBezier",
@@ -653,7 +731,7 @@ def dashboard_html(graph_key):
         id: node.key,
         color: {{
           background: statusColors[node.status] || "#9ca3af",
-          border: selectedSet.has(node.key) ? "#f8fafc" : "#0b1220"
+          border: selectedSet.has(node.key) ? themeColors().selectedBorder : themeColors().nodeBorder
         }},
         borderWidth: selectedSet.has(node.key) ? 4 : 1,
         shadow: selectedSet.has(node.key)
@@ -719,7 +797,7 @@ def dashboard_html(graph_key):
       const nodes = latestSnapshot.nodes.map(n => ({{
         id: n.key,
         label: n.key,
-        color: {{ background: statusColors[n.status] || "#9ca3af", border: "#0b1220" }},
+        color: {{ background: statusColors[n.status] || "#9ca3af", border: themeColors().nodeBorder }},
         title: `${{n.key}} (${{n.status}})`,
         properties: n.properties || {{}},
         level: layout.levels.get(n.key) || 0,
@@ -827,6 +905,23 @@ def dashboard_html(graph_key):
       document.documentElement.style.setProperty("--top-panel-height", `${{clamped}}px`);
     }});
 
+    function applyTheme(theme) {{
+      document.documentElement.setAttribute("data-theme", theme);
+      try {{ localStorage.setItem("fwirl:theme", theme); }} catch (_error) {{}}
+      const colors = THEMES[theme];
+      document.getElementById("tabulator-theme").setAttribute("href", colors.tabulator);
+      document.getElementById("theme-toggle").textContent = theme === "dark" ? "Light mode" : "Dark mode";
+      network.setOptions({{
+        nodes: {{ font: {{ color: colors.font }} }},
+        edges: {{ color: colors.edge }}
+      }});
+      if (latestSnapshot) updateSelectionStyles();
+    }}
+    document.getElementById("theme-toggle").addEventListener("click", () => {{
+      applyTheme(currentTheme() === "dark" ? "light" : "dark");
+    }});
+    applyTheme(currentTheme());
+
     (async () => {{
       try {{
         await fetchSnapshot();
@@ -850,6 +945,17 @@ def landing_html():
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>fwirl dashboard</title>
+  <script>
+    (function() {
+      let theme = "dark";
+      try {
+        const saved = localStorage.getItem("fwirl:theme");
+        if (saved === "light" || saved === "dark") theme = saved;
+        else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+      } catch (_error) {}
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
   <style>
     :root {
       --bg: #0f172a;
@@ -857,6 +963,19 @@ def landing_html():
       --text: #e2e8f0;
       --muted: #94a3b8;
       --accent: #38bdf8;
+      --accent-text: #082f49;
+      --control-bg: rgba(15, 23, 42, 0.75);
+      --control-border: rgba(148, 163, 184, 0.35);
+    }
+    :root[data-theme="light"] {
+      --bg: #f1f5f9;
+      --panel: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #0284c7;
+      --accent-text: #ffffff;
+      --control-bg: #f8fafc;
+      --control-border: #cbd5e1;
     }
     body {
       margin: 0;
@@ -878,18 +997,18 @@ def landing_html():
     p { color: var(--muted); line-height: 1.5; }
     form { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 18px; }
     select, button {
-      border: 1px solid rgba(148, 163, 184, 0.35);
+      border: 1px solid var(--control-border);
       border-radius: 10px;
       padding: 10px 12px;
       font: inherit;
     }
     select {
-      background: rgba(15, 23, 42, 0.75);
+      background: var(--control-bg);
       color: var(--text);
     }
     button {
       background: var(--accent);
-      color: #082f49;
+      color: var(--accent-text);
       cursor: pointer;
       font-weight: 600;
     }
@@ -898,13 +1017,24 @@ def landing_html():
       cursor: not-allowed;
     }
     code {
-      background: rgba(15, 23, 42, 0.75);
+      background: var(--control-bg);
       border-radius: 6px;
       padding: 2px 6px;
+    }
+    #theme-toggle {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: var(--panel);
+      color: var(--text);
+      font-weight: 500;
+      font-size: 13px;
+      padding: 6px 10px;
     }
   </style>
 </head>
 <body>
+  <button id="theme-toggle" type="button" aria-label="Toggle dark mode"></button>
   <main class="card">
     <h1>fwirl dashboard</h1>
     <p id="graph-status">Choose a running graph to open its dashboard. The bundled examples use <code>test_graph</code>.</p>
@@ -916,6 +1046,17 @@ def landing_html():
     </form>
   </main>
   <script>
+    const themeToggle = document.getElementById("theme-toggle");
+    function applyTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      try { localStorage.setItem("fwirl:theme", theme); } catch (_error) {}
+      themeToggle.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+    }
+    themeToggle.addEventListener("click", () => {
+      applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+    });
+    applyTheme(document.documentElement.getAttribute("data-theme"));
+
     const input = document.getElementById("graph-key");
     const status = document.getElementById("graph-status");
     const openButton = document.getElementById("open-button");
