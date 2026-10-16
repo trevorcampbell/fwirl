@@ -233,7 +233,7 @@
 <div class="viewcode-block" id="GraphWorker">
 <a class="viewcode-back" href="../../api.html#fwirl.worker.GraphWorker">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">GraphWorker</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract base class for dynamic graph restructuring callbacks.</span>
+<span class="w">    </span><span class="sd">"""Abstract base class for dynamic graph restructuring callbacks.</span>
 
 <span class="sd">    Attach a :class:`GraphWorker` to an :class:`~fwirl.AssetGraph` to receive</span>
 <span class="sd">    a callback after any of its *watched_assets* are successfully rebuilt.</span>
@@ -247,7 +247,7 @@
 <span class="sd">    Args:</span>
 <span class="sd">        watched_assets: An iterable of :class:`~fwirl.Asset` objects whose</span>
 <span class="sd">            rebuild should trigger :meth:`restructure`.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">watched_assets</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">watched_assets</span> <span class="o">=</span> <span class="n">watched_assets</span>
@@ -256,7 +256,7 @@
 <a class="viewcode-back" href="../../api.html#fwirl.worker.GraphWorker.restructure">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">restructure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Inspect the graph and optionally add new assets.</span>
+<span class="w">        </span><span class="sd">"""Inspect the graph and optionally add new assets.</span>
 
 <span class="sd">        This coroutine is called after any of the watched assets finish</span>
 <span class="sd">        rebuilding.  Use the *graph* parameter to add new assets and return</span>
@@ -268,7 +268,7 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            A list of newly added :class:`~fwirl.Asset` objects, or an empty</span>
 <span class="sd">            list if no new assets were added.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 </div>
 

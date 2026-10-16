@@ -258,7 +258,7 @@ directly) works without RabbitMQ.</p>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pendulum</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plm</span>
 
 <span class="k">class</span><span class="w"> </span><span class="nc">MyAsset</span><span class="p">(</span><span class="n">fwirl</span><span class="o">.</span><span class="n">Asset</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A simple in-memory asset.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""A simple in-memory asset."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">dependencies</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_built</span> <span class="o">=</span> <span class="kc">False</span>
@@ -280,11 +280,11 @@ directly) works without RabbitMQ.</p>
 <h2>Building a graph<a class="headerlink" href="#building-a-graph" title="Link to this heading">¶</a></h2>
 <p>Create an <a class="reference internal" href="api.html#fwirl.AssetGraph" title="fwirl.AssetGraph"><code class="xref py py-class docutils literal notranslate"><span class="pre">AssetGraph</span></code></a>, add assets, and call
 <a class="reference internal" href="api.html#fwirl.AssetGraph.build" title="fwirl.AssetGraph.build"><code class="xref py py-meth docutils literal notranslate"><span class="pre">build()</span></code></a>:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">g</span> <span class="o">=</span> <span class="n">fwirl</span><span class="o">.</span><span class="n">AssetGraph</span><span class="p">(</span><span class="s2">&quot;my_graph&quot;</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">g</span> <span class="o">=</span> <span class="n">fwirl</span><span class="o">.</span><span class="n">AssetGraph</span><span class="p">(</span><span class="s2">"my_graph"</span><span class="p">)</span>
 
-<span class="n">root</span>  <span class="o">=</span> <span class="n">MyAsset</span><span class="p">(</span><span class="s2">&quot;root&quot;</span><span class="p">,</span>  <span class="p">[])</span>
-<span class="n">child</span> <span class="o">=</span> <span class="n">MyAsset</span><span class="p">(</span><span class="s2">&quot;child&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">root</span><span class="p">])</span>
-<span class="n">leaf</span>  <span class="o">=</span> <span class="n">MyAsset</span><span class="p">(</span><span class="s2">&quot;leaf&quot;</span><span class="p">,</span>  <span class="p">[</span><span class="n">child</span><span class="p">])</span>
+<span class="n">root</span>  <span class="o">=</span> <span class="n">MyAsset</span><span class="p">(</span><span class="s2">"root"</span><span class="p">,</span>  <span class="p">[])</span>
+<span class="n">child</span> <span class="o">=</span> <span class="n">MyAsset</span><span class="p">(</span><span class="s2">"child"</span><span class="p">,</span> <span class="p">[</span><span class="n">root</span><span class="p">])</span>
+<span class="n">leaf</span>  <span class="o">=</span> <span class="n">MyAsset</span><span class="p">(</span><span class="s2">"leaf"</span><span class="p">,</span>  <span class="p">[</span><span class="n">child</span><span class="p">])</span>
 
 <span class="n">g</span><span class="o">.</span><span class="n">add_assets</span><span class="p">([</span><span class="n">leaf</span><span class="p">])</span>   <span class="c1"># dependencies are discovered automatically</span>
 <span class="n">g</span><span class="o">.</span><span class="n">build</span><span class="p">()</span>              <span class="c1"># builds root → child → leaf in order</span>
@@ -298,8 +298,8 @@ assets are stale without rebuilding them, then call
 <h2>Scheduling<a class="headerlink" href="#scheduling" title="Link to this heading">¶</a></h2>
 <p>Attach recurring schedules with <a class="reference internal" href="api.html#fwirl.AssetGraph.schedule" title="fwirl.AssetGraph.schedule"><code class="xref py py-meth docutils literal notranslate"><span class="pre">schedule()</span></code></a>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Refresh all asset statuses every minute, then build stale ones every hour</span>
-<span class="n">g</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="s2">&quot;refresh_minutely&quot;</span><span class="p">,</span> <span class="s2">&quot;refresh&quot;</span><span class="p">,</span> <span class="s2">&quot;* * * * *&quot;</span><span class="p">)</span>
-<span class="n">g</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="s2">&quot;build_hourly&quot;</span><span class="p">,</span>     <span class="s2">&quot;build&quot;</span><span class="p">,</span>   <span class="s2">&quot;0 * * * *&quot;</span><span class="p">)</span>
+<span class="n">g</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="s2">"refresh_minutely"</span><span class="p">,</span> <span class="s2">"refresh"</span><span class="p">,</span> <span class="s2">"* * * * *"</span><span class="p">)</span>
+<span class="n">g</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="s2">"build_hourly"</span><span class="p">,</span>     <span class="s2">"build"</span><span class="p">,</span>   <span class="s2">"0 * * * *"</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -348,8 +348,8 @@ via the <code class="docutils literal notranslate"><span class="pre">resources</
     <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
-<span class="n">db</span> <span class="o">=</span> <span class="n">DBConnection</span><span class="p">(</span><span class="s2">&quot;main_db&quot;</span><span class="p">)</span>
-<span class="n">asset</span> <span class="o">=</span> <span class="n">MyDBAsset</span><span class="p">(</span><span class="s2">&quot;db_asset&quot;</span><span class="p">,</span> <span class="p">[],</span> <span class="n">resources</span><span class="o">=</span><span class="p">[</span><span class="n">db</span><span class="p">])</span>
+<span class="n">db</span> <span class="o">=</span> <span class="n">DBConnection</span><span class="p">(</span><span class="s2">"main_db"</span><span class="p">)</span>
+<span class="n">asset</span> <span class="o">=</span> <span class="n">MyDBAsset</span><span class="p">(</span><span class="s2">"db_asset"</span><span class="p">,</span> <span class="p">[],</span> <span class="n">resources</span><span class="o">=</span><span class="p">[</span><span class="n">db</span><span class="p">])</span>
 </pre></div>
 </div>
 </section>
@@ -358,10 +358,10 @@ via the <code class="docutils literal notranslate"><span class="pre">resources</
 <p>Pass a <code class="docutils literal notranslate"><span class="pre">notifiers</span></code> mapping to <a class="reference internal" href="api.html#fwirl.AssetGraph" title="fwirl.AssetGraph"><code class="xref py py-class docutils literal notranslate"><span class="pre">AssetGraph</span></code></a> to receive alerts
 through any service supported by the
 <a class="reference external" href="https://notifiers.readthedocs.io/">notifiers</a> library:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">g</span> <span class="o">=</span> <span class="n">fwirl</span><span class="o">.</span><span class="n">AssetGraph</span><span class="p">(</span><span class="s2">&quot;my_graph&quot;</span><span class="p">,</span> <span class="n">notifiers</span><span class="o">=</span><span class="p">{</span>
-    <span class="s2">&quot;slack&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;webhook_url&quot;</span><span class="p">:</span> <span class="s2">&quot;https://hooks.slack.com/...&quot;</span><span class="p">},</span>
-        <span class="s2">&quot;level&quot;</span><span class="p">:</span> <span class="s2">&quot;ERROR&quot;</span><span class="p">,</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">g</span> <span class="o">=</span> <span class="n">fwirl</span><span class="o">.</span><span class="n">AssetGraph</span><span class="p">(</span><span class="s2">"my_graph"</span><span class="p">,</span> <span class="n">notifiers</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">"slack"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"params"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"webhook_url"</span><span class="p">:</span> <span class="s2">"https://hooks.slack.com/..."</span><span class="p">},</span>
+        <span class="s2">"level"</span><span class="p">:</span> <span class="s2">"ERROR"</span><span class="p">,</span>
     <span class="p">}</span>
 <span class="p">})</span>
 </pre></div>

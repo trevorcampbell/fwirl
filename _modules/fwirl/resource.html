@@ -234,7 +234,7 @@
 <div class="viewcode-block" id="Resource">
 <a class="viewcode-back" href="../../api.html#fwirl.resource.Resource">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Resource</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract base class for a managed build resource.</span>
+<span class="w">    </span><span class="sd">"""Abstract base class for a managed build resource.</span>
 
 <span class="sd">    Resources represent shared, stateful objects (database connections, file</span>
 <span class="sd">    handles, hardware locks, etc.) that must be acquired before a build begins</span>
@@ -256,7 +256,7 @@
 
 <span class="sd">            def close(self):</span>
 <span class="sd">                self.conn.close()</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
@@ -269,17 +269,17 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">hash</span> <span class="o">==</span> <span class="n">rhs</span><span class="o">.</span><span class="n">hash</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">"(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">)"</span>
 
 <div class="viewcode-block" id="Resource.init">
 <a class="viewcode-back" href="../../api.html#fwirl.resource.Resource.init">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">init</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Acquire / open the resource.</span>
+<span class="w">        </span><span class="sd">"""Acquire / open the resource.</span>
 
 <span class="sd">        Called once before the build pass that needs this resource begins.</span>
 <span class="sd">        Raise an exception to abort the build.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 
 
@@ -287,11 +287,11 @@
 <a class="viewcode-back" href="../../api.html#fwirl.resource.Resource.close">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Release / close the resource.</span>
+<span class="w">        </span><span class="sd">"""Release / close the resource.</span>
 
 <span class="sd">        Called after every build pass, even when :meth:`init` raised an</span>
 <span class="sd">        exception for a *different* resource in the same build.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 </div>
 

@@ -234,7 +234,7 @@
 <div class="viewcode-block" id="Schedule">
 <a class="viewcode-back" href="../../api.html#fwirl.schedule.Schedule">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Schedule</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A named, optionally-recurring job attached to an :class:`~fwirl.AssetGraph`.</span>
+<span class="w">    </span><span class="sd">"""A named, optionally-recurring job attached to an :class:`~fwirl.AssetGraph`.</span>
 
 <span class="sd">    :class:`Schedule` objects are created internally by</span>
 <span class="sd">    :meth:`AssetGraph.schedule &lt;fwirl.AssetGraph.schedule&gt;` and are not</span>
@@ -244,19 +244,19 @@
 <span class="sd">        name: A unique string identifier for this schedule.</span>
 <span class="sd">        func: The async callable to invoke when the schedule fires.</span>
 <span class="sd">        kwargs: Keyword arguments passed to *func* on each invocation.</span>
-<span class="sd">        cron_string: A standard cron expression (``&quot;* * * * *&quot;`` by default)</span>
+<span class="sd">        cron_string: A standard cron expression (``"* * * * *"`` by default)</span>
 <span class="sd">            that controls when the schedule fires.  Ignored when</span>
 <span class="sd">            *immediate_once* is ``True``.</span>
 <span class="sd">        immediate_once: When ``True`` the schedule fires once as soon as</span>
 <span class="sd">            possible and is then removed from the graph.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">IMMEDIATE</span> <span class="o">=</span> <span class="n">plm</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">1970</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">cron_string</span><span class="o">=</span><span class="s1">&#39;* * * * *&#39;</span><span class="p">,</span> <span class="n">immediate_once</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">cron_string</span><span class="o">=</span><span class="s1">'* * * * *'</span><span class="p">,</span> <span class="n">immediate_once</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
         <span class="k">if</span> <span class="n">immediate_once</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">cron_string</span> <span class="o">=</span> <span class="s1">&#39;IMMEDIATE&#39;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cron_string</span> <span class="o">=</span> <span class="s1">'IMMEDIATE'</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">cron</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">cron_string</span> <span class="o">=</span> <span class="n">cron_string</span>
@@ -268,7 +268,7 @@
 <div class="viewcode-block" id="Schedule.next">
 <a class="viewcode-back" href="../../api.html#fwirl.schedule.Schedule.next">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return seconds until the next scheduled firing, or :attr:`IMMEDIATE`.</span>
+<span class="w">        </span><span class="sd">"""Return seconds until the next scheduled firing, or :attr:`IMMEDIATE`.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            dt: Reference :class:`pendulum.DateTime`; defaults to now.</span>
@@ -276,7 +276,7 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Number of seconds (float) until the next occurrence, or</span>
 <span class="sd">            :attr:`IMMEDIATE` for one-shot schedules.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cron</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cron</span><span class="o">.</span><span class="n">next</span><span class="p">(</span><span class="n">dt</span><span class="p">,</span> <span class="n">default_utc</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># return number of seconds until next event</span>
         <span class="k">return</span> <span class="n">Schedule</span><span class="o">.</span><span class="n">IMMEDIATE</span></div>
@@ -285,41 +285,41 @@
 <div class="viewcode-block" id="Schedule.pause">
 <a class="viewcode-back" href="../../api.html#fwirl.schedule.Schedule.pause">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">pause</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Prevent this schedule from firing until :meth:`unpause` is called.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Prevent this schedule from firing until :meth:`unpause` is called."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">paused</span> <span class="o">=</span> <span class="kc">True</span></div>
 
 
 <div class="viewcode-block" id="Schedule.unpause">
 <a class="viewcode-back" href="../../api.html#fwirl.schedule.Schedule.unpause">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">unpause</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Allow this schedule to fire again after a :meth:`pause`.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Allow this schedule to fire again after a :meth:`pause`."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">paused</span> <span class="o">=</span> <span class="kc">False</span></div>
 
 
 <div class="viewcode-block" id="Schedule.is_paused">
 <a class="viewcode-back" href="../../api.html#fwirl.schedule.Schedule.is_paused">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">is_paused</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return ``True`` if the schedule is currently paused.</span>
+<span class="w">        </span><span class="sd">"""Return ``True`` if the schedule is currently paused.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            bool: Paused state.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">paused</span></div>
 
 
 <div class="viewcode-block" id="Schedule.generate_coroutine">
 <a class="viewcode-back" href="../../api.html#fwirl.schedule.Schedule.generate_coroutine">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">generate_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create and return the coroutine for the next scheduled execution.</span>
+<span class="w">        </span><span class="sd">"""Create and return the coroutine for the next scheduled execution.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A coroutine object ready to be awaited.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">func</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cron_string</span><span class="si">}</span><span class="s2">, Paused=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">paused</span><span class="si">}</span><span class="s2">)&quot;</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">"(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cron_string</span><span class="si">}</span><span class="s2">, Paused=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">paused</span><span class="si">}</span><span class="s2">)"</span></div>
 
 </pre></div>
         </article>

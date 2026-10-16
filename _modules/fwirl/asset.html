@@ -236,7 +236,7 @@
 <div class="viewcode-block" id="AssetStatus">
 <a class="viewcode-back" href="../../api.html#fwirl.AssetStatus">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">AssetStatus</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Enumeration of possible states for an :class:`Asset`.</span>
+<span class="w">    </span><span class="sd">"""Enumeration of possible states for an :class:`Asset`.</span>
 
 <span class="sd">    Attributes:</span>
 <span class="sd">        Current: The asset is up-to-date with respect to all its dependencies.</span>
@@ -246,7 +246,7 @@
 <span class="sd">        UpstreamStopped: A dependency is paused or failed, blocking this asset.</span>
 <span class="sd">        Unavailable: The asset has not yet been built or does not exist.</span>
 <span class="sd">        Failed: The most recent build attempt for this asset failed.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">Current</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="n">Stale</span> <span class="o">=</span> <span class="mi">1</span>
@@ -261,7 +261,7 @@
 <div class="viewcode-block" id="Asset">
 <a class="viewcode-back" href="../../api.html#fwirl.Asset">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Asset</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract base class for a single node in an :class:`~fwirl.AssetGraph`.</span>
+<span class="w">    </span><span class="sd">"""Abstract base class for a single node in an :class:`~fwirl.AssetGraph`.</span>
 
 <span class="sd">    Subclass :class:`Asset` and implement the :meth:`timestamp` and</span>
 <span class="sd">    :meth:`build` coroutines to define how fwirl should check whether an</span>
@@ -295,7 +295,7 @@
 <span class="sd">            async def build(self):</span>
 <span class="sd">                # Produce the asset.</span>
 <span class="sd">                ...</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">dependencies</span><span class="p">,</span> <span class="n">resources</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subgroup</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">allow_retry</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">properties</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">key</span>
@@ -303,7 +303,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">dependencies</span> <span class="o">=</span> <span class="n">dependencies</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">resources</span> <span class="o">=</span> <span class="p">[]</span> <span class="k">if</span> <span class="p">(</span><span class="n">resources</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="k">else</span> <span class="n">resources</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">AssetStatus</span><span class="o">.</span><span class="n">Unavailable</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">message</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">message</span> <span class="o">=</span> <span class="s2">""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">group</span> <span class="o">=</span> <span class="n">group</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">subgroup</span> <span class="o">=</span> <span class="n">subgroup</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">allow_retry</span> <span class="o">=</span> <span class="n">allow_retry</span>
@@ -317,17 +317,17 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">hash</span> <span class="o">==</span> <span class="n">rhs</span><span class="o">.</span><span class="n">hash</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="c1">#return self.__class__.__name__ + f&quot;({self.key})&quot;</span>
+        <span class="c1">#return self.__class__.__name__ + f"({self.key})"</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span>
 
 <div class="viewcode-block" id="Asset.get_key">
 <a class="viewcode-back" href="../../api.html#fwirl.Asset.get_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the string key that uniquely identifies this asset.</span>
+<span class="w">        </span><span class="sd">"""Return the string key that uniquely identifies this asset.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            str: The asset&#39;s key.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">            str: The asset's key.</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span></div>
 
 
@@ -335,13 +335,13 @@
 <a class="viewcode-back" href="../../api.html#fwirl.Asset.timestamp">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">timestamp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the timestamp of the most recently produced asset.</span>
+<span class="w">        </span><span class="sd">"""Return the timestamp of the most recently produced asset.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A :class:`pendulum.DateTime` representing when the asset was</span>
 <span class="sd">            last built, or :attr:`AssetStatus.Unavailable` if the asset</span>
 <span class="sd">            does not yet exist.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 
 
@@ -349,12 +349,12 @@
 <a class="viewcode-back" href="../../api.html#fwirl.Asset.build">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Produce (or re-produce) this asset.</span>
+<span class="w">        </span><span class="sd">"""Produce (or re-produce) this asset.</span>
 
 <span class="sd">        This coroutine is called by fwirl whenever the asset is stale or</span>
 <span class="sd">        unavailable.  Any return value is ignored; indicate failure by</span>
 <span class="sd">        raising an exception.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 </div>
 
@@ -366,10 +366,10 @@
 <div class="viewcode-block" id="ExternalAsset">
 <a class="viewcode-back" href="../../api.html#fwirl.ExternalAsset">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">ExternalAsset</span><span class="p">(</span><span class="n">Asset</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;An :class:`Asset` whose value is managed by an external system.</span>
+<span class="w">    </span><span class="sd">"""An :class:`Asset` whose value is managed by an external system.</span>
 
 <span class="sd">    Use :class:`ExternalAsset` when the underlying data can change at any</span>
-<span class="sd">    time outside of fwirl&#39;s control (for example, a file written by another</span>
+<span class="sd">    time outside of fwirl's control (for example, a file written by another</span>
 <span class="sd">    process, or a row in a database updated by a third-party service).</span>
 <span class="sd">    fwirl polls the value at most once every *min_polling_interval*; if the</span>
 <span class="sd">    polled value differs from the cached value the asset is automatically</span>
@@ -388,7 +388,7 @@
 <span class="sd">        group: Optional grouping label.</span>
 <span class="sd">        subgroup: Optional sub-grouping label.</span>
 <span class="sd">        allow_retry: See :class:`Asset`.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">dependencies</span><span class="p">,</span> <span class="n">min_polling_interval</span><span class="p">,</span> <span class="n">resources</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subgroup</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">allow_retry</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">min_polling_interval</span> <span class="o">=</span> <span class="n">min_polling_interval</span>
@@ -404,7 +404,7 @@
 <div class="viewcode-block" id="ExternalAsset.timestamp">
 <a class="viewcode-back" href="../../api.html#fwirl.ExternalAsset.timestamp">[docs]</a>
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">timestamp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Poll the external resource and return the cached timestamp.</span>
+<span class="w">        </span><span class="sd">"""Poll the external resource and return the cached timestamp.</span>
 
 <span class="sd">        If the minimum polling interval has elapsed, :meth:`get` is called.</span>
 <span class="sd">        When :meth:`diff` reports a change the asset is marked stale and</span>
@@ -413,11 +413,11 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            A :class:`pendulum.DateTime` of the last accepted value, or</span>
 <span class="sd">            :attr:`AssetStatus.Unavailable` if no value has been accepted yet.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">last_poll</span> <span class="o">==</span> <span class="n">AssetStatus</span><span class="o">.</span><span class="n">Unavailable</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">plm</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">last_poll</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">min_polling_interval</span><span class="p">):</span>
             <span class="n">val</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">last_poll</span> <span class="o">=</span> <span class="n">plm</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
-            <span class="c1"># if there&#39;s a diff, flag the asset as stale and store the pending value</span>
+            <span class="c1"># if there's a diff, flag the asset as stale and store the pending value</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_pending_val</span> <span class="o">=</span> <span class="n">val</span>
                 <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">status</span> <span class="o">!=</span> <span class="n">AssetStatus</span><span class="o">.</span><span class="n">Unavailable</span><span class="p">:</span>
@@ -428,8 +428,8 @@
 <div class="viewcode-block" id="ExternalAsset.build">
 <a class="viewcode-back" href="../../api.html#fwirl.ExternalAsset.build">[docs]</a>
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit any pending external value and update the internal timestamp.&quot;&quot;&quot;</span>
-        <span class="c1"># if there&#39;s a pending value, move it into the cached value and update the timestamp</span>
+<span class="w">        </span><span class="sd">"""Commit any pending external value and update the internal timestamp."""</span>
+        <span class="c1"># if there's a pending value, move it into the cached value and update the timestamp</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_cached_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_val</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_cached_timestamp</span> <span class="o">=</span> <span class="n">plm</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
@@ -441,12 +441,12 @@
 <a class="viewcode-back" href="../../api.html#fwirl.ExternalAsset.get">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieve the current value of the external resource.</span>
+<span class="w">        </span><span class="sd">"""Retrieve the current value of the external resource.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            The current value in whatever form is appropriate for</span>
 <span class="sd">            :meth:`diff` to compare against.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 
 
@@ -454,14 +454,14 @@
 <a class="viewcode-back" href="../../api.html#fwirl.ExternalAsset.diff">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">diff</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return ``True`` if *val* differs from the cached value.</span>
+<span class="w">        </span><span class="sd">"""Return ``True`` if *val* differs from the cached value.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            val: The value returned by the most recent :meth:`get` call.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            bool: ``True`` when the asset should be considered stale.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span>  <span class="c1"># compare to self._cached_val</span></div>
 </div>
 
