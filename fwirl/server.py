@@ -148,6 +148,8 @@ def dashboard_html(graph_key):
       flex-direction: column;
       gap: 8px;
     }}
+    .detail-panel {{ overflow-y: auto; }}
+    .detail-panel > * {{ flex-shrink: 0; }}
     #graph-wrap {{
       position: relative;
       flex: 1;
@@ -184,6 +186,7 @@ def dashboard_html(graph_key):
     .section-title {{ font-size: 14px; font-weight: 600; color: var(--muted); }}
     .detail-grid {{ display: grid; grid-template-columns: 120px 1fr; gap: 6px 10px; font-size: 13px; }}
     .detail-grid .k {{ color: var(--muted); }}
+    .summary-block {{ grid-column: 1 / -1; font-size: 12px; line-height: 1.5; white-space: pre-wrap; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
     .controls {{ display: grid; gap: 6px; }}
     .controls input, .controls textarea, .controls button {{
       border-radius: 8px;
@@ -258,8 +261,8 @@ def dashboard_html(graph_key):
         </div>
       </div>
       <div id="vertical-resizer" class="resizer vertical"></div>
-      <div class="panel">
-        <div class="section-title">Asset Details</div>
+      <div class="panel detail-panel">
+        <div class="section-title" id="detail-title">Asset Details</div>
         <div id="asset-detail" class="detail-grid"><div class="k">Selection</div><div>None</div></div>
         <div class="actions">
           <button id="build-btn">Build</button>
@@ -766,6 +769,124 @@ def dashboard_html(graph_key):
       document.getElementById("properties-editor").value = JSON.stringify(asset.properties || {{}}, null, 2);
     }}
 
+    function statusLabel(status) {{
+      const color = statusColors[status] || "#9ca3af";
+      return `<span style="color:${{color}};font-weight:600;">${{escapeHtml(status)}}</span>`;
+    }}
+
+    // Mirrors AssetGraph.summarize() for an arbitrary subset of assets.
+    function summarizeAssets(nodes, allEdges) {{
+      const keys = new Set(nodes.map((n) => n.key));
+      const edges = allEdges.filter((e) => keys.has(e.from) && keys.has(e.to));
+
+      // Order assets topologically (Kahn, stable w.r.t. snapshot order).
+      const indegree = new Map(nodes.map((n) => [n.key, 0]));
+      const childrenOf = new Map(nodes.map((n) => [n.key, []]));
+      for (const e of edges) {{
+        indegree.set(e.to, indegree.get(e.to) + 1);
+        childrenOf.get(e.from).push(e.to);
+      }}
+      const byKey = new Map(nodes.map((n) => [n.key, n]));
+      const queue = nodes.filter((n) => indegree.get(n.key) === 0).map((n) => n.key);
+      const ordered = [];
+      while (queue.length) {{
+        const key = queue.shift();
+        ordered.push(byKey.get(key));
+        for (const child of childrenOf.get(key)) {{
+          indegree.set(child, indegree.get(child) - 1);
+          if (indegree.get(child) === 0) queue.push(child);
+        }}
+      }}
+
+      const singletons = [];
+      const groups = new Map();
+      for (const asset of ordered) {{
+        if (asset.group == null) {{
+          singletons.push(asset);
+          continue;
+        }}
+        if (!groups.has(asset.group)) groups.set(asset.group, {{ subgroups: new Map(), singletons: [] }});
+        const group = groups.get(asset.group);
+        if (asset.subgroup == null) {{
+          group.singletons.push(asset);
+        }} else {{
+          if (!group.subgroups.has(asset.subgroup)) group.subgroups.set(asset.subgroup, []);
+          group.subgroups.get(asset.subgroup).push(asset);
+        }}
+      }}
+
+      const statuses = Object.keys(statusColors);
+      const countByStatus = (assets) => {{
+        const counts = new Map();
+        for (const asset of assets) counts.set(asset.status, (counts.get(asset.status) || 0) + 1);
+        return counts;
+      }};
+      const lines = [];
+      lines.push(`Assets: ${{nodes.length}}`);
+      for (const status of statuses) {{
+        lines.push(`    ${{statusLabel(status)}}: ${{nodes.filter((n) => n.status === status).length}} assets`);
+      }}
+      lines.push(`Edges: ${{edges.length}}`);
+      lines.push(`Asset Groups: ${{groups.size}} groups, ${{singletons.length}} singletons`);
+
+      lines.push("    Singletons:");
+      const singletonCounts = countByStatus(singletons.filter((a) => a.status !== "Failed"));
+      for (const [status, count] of singletonCounts) {{
+        lines.push(`        ${{statusLabel(status)}}: ${{count}} singletons`);
+      }}
+      for (const asset of singletons.filter((a) => a.status === "Failed")) {{
+        lines.push(`        ${{escapeHtml(asset.key)}}: ${{statusLabel(asset.status)}}`);
+      }}
+
+      for (const [name, group] of groups) {{
+        lines.push(`    Group ${{escapeHtml(name)}}: ${{group.subgroups.size}} subgroups, ${{group.singletons.length}} singletons`);
+        const counts = countByStatus(group.singletons.filter((a) => a.status !== "Failed"));
+        const special = [];
+        for (const [subgroup, assets] of group.subgroups) {{
+          const uniform = new Set(assets.map((a) => a.status)).size === 1 && assets[0].status !== "Failed";
+          if (uniform) counts.set(assets[0].status, (counts.get(assets[0].status) || 0) + 1);
+          else special.push([subgroup, assets]);
+        }}
+        for (const [status, count] of counts) {{
+          lines.push(`        ${{statusLabel(status)}}: ${{count}} subgroups/singletons`);
+        }}
+        for (const asset of group.singletons.filter((a) => a.status === "Failed")) {{
+          lines.push(`        Singleton ${{escapeHtml(asset.key)}}: ${{statusLabel(asset.status)}}`);
+        }}
+        for (const [subgroup, assets] of special) {{
+          lines.push(`        Subgroup ${{escapeHtml(subgroup)}}:`);
+          for (const asset of assets) {{
+            lines.push(`            ${{escapeHtml(asset.key)}} : ${{statusLabel(asset.status)}}`);
+          }}
+        }}
+      }}
+      return lines.join("\\n");
+    }}
+
+    function renderSummary() {{
+      const nodes = latestSnapshot?.nodes || [];
+      const edges = latestSnapshot?.edges || [];
+      const subset = selectedAssets.length >= 2;
+      const selected = new Set(selectedAssets);
+      const scope = subset ? nodes.filter((n) => selected.has(n.key)) : nodes;
+      document.getElementById("detail-title").textContent = subset ? "Selection Summary" : "Asset Summary";
+      document.getElementById("asset-detail").innerHTML =
+        `<pre class="summary-block">${{summarizeAssets(scope, edges)}}</pre>`;
+      document.getElementById("properties-editor").value = "";
+    }}
+
+    function renderPanel() {{
+      const single = selectedAssets.length === 1;
+      document.getElementById("properties-editor").disabled = !single;
+      document.getElementById("properties-save-btn").disabled = !single;
+      if (single) {{
+        document.getElementById("detail-title").textContent = "Asset Details";
+        renderDetails(getSnapshotAsset(selectedAsset));
+      }} else {{
+        renderSummary();
+      }}
+    }}
+
     function parseApiResponse(text) {{
       if (!text) return null;
       try {{
@@ -836,7 +957,7 @@ def dashboard_html(graph_key):
       selectedAssets = selectedAssets.filter(key => latestSnapshot.nodes.some(node => node.key === key));
       selectedAsset = selectedAssets.length > 0 ? selectedAssets[0] : null;
       updateSelectionStyles();
-      renderDetails(selectedAsset ? getSnapshotAsset(selectedAsset) : null);
+      renderPanel();
     }}
 
     async function saveProperties(assetKey, properties) {{
@@ -850,7 +971,7 @@ def dashboard_html(graph_key):
       selectedAssets = [...new Set(assetKeys)];
       selectedAsset = selectedAssets.length > 0 ? selectedAssets[0] : null;
       updateSelectionStyles();
-      renderDetails(selectedAsset ? getSnapshotAsset(selectedAsset) : null);
+      renderPanel();
     }}
 
     async function triggerAction(action) {{
