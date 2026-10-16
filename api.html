@@ -658,6 +658,22 @@ are marked <code class="xref py py-attr docutils literal notranslate"><span clas
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="fwirl.AssetGraph.set_allow_retry">
+<span class="sig-name descname"><span class="pre">set_allow_retry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">asset</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_retry</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fwirl/graph.html#AssetGraph.set_allow_retry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fwirl.AssetGraph.set_allow_retry" title="Link to this definition">¶</a></dt>
+<dd><p>Set whether a failed asset is retried on the next build pass.</p>
+<p>See the <code class="docutils literal notranslate"><span class="pre">allow_retry</span></code> argument of <a class="reference internal" href="#fwirl.Asset" title="fwirl.Asset"><code class="xref py py-class docutils literal notranslate"><span class="pre">Asset</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>asset</strong> – The <a class="reference internal" href="#fwirl.Asset" title="fwirl.Asset"><code class="xref py py-class docutils literal notranslate"><span class="pre">Asset</span></code></a> to update.</p></li>
+<li><p><strong>allow_retry</strong> – <code class="docutils literal notranslate"><span class="pre">True</span></code> to retry failures automatically, <code class="docutils literal notranslate"><span class="pre">False</span></code>
+to keep the asset <code class="docutils literal notranslate"><span class="pre">Failed</span></code> until it is manually unpaused.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="fwirl.AssetGraph.unpause_schedule">
 <span class="sig-name descname"><span class="pre">unpause_schedule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">schedule_key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/fwirl/graph.html#AssetGraph.unpause_schedule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#fwirl.AssetGraph.unpause_schedule" title="Link to this definition">¶</a></dt>
 <dd><p>Resume a previously paused schedule.</p>
@@ -1179,6 +1195,7 @@ When <code class="docutils literal notranslate"><span class="pre">None</span></c
 <li><a class="reference internal" href="#fwirl.AssetGraph.unschedule"><code class="docutils literal notranslate"><span class="pre">AssetGraph.unschedule()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.pause_schedule"><code class="docutils literal notranslate"><span class="pre">AssetGraph.pause_schedule()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.pause_asset"><code class="docutils literal notranslate"><span class="pre">AssetGraph.pause_asset()</span></code></a></li>
+<li><a class="reference internal" href="#fwirl.AssetGraph.set_allow_retry"><code class="docutils literal notranslate"><span class="pre">AssetGraph.set_allow_retry()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.unpause_schedule"><code class="docutils literal notranslate"><span class="pre">AssetGraph.unpause_schedule()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.unpause_asset"><code class="docutils literal notranslate"><span class="pre">AssetGraph.unpause_asset()</span></code></a></li>
 <li><a class="reference internal" href="#fwirl.AssetGraph.run"><code class="docutils literal notranslate"><span class="pre">AssetGraph.run()</span></code></a></li>

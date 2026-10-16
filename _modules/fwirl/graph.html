@@ -661,6 +661,22 @@
         <span class="n">asset</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">AssetStatus</span><span class="o">.</span><span class="n">Paused</span></div>
 
 
+<div class="viewcode-block" id="AssetGraph.set_allow_retry">
+<a class="viewcode-back" href="../../api.html#fwirl.AssetGraph.set_allow_retry">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_allow_retry</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">asset</span><span class="p">,</span> <span class="n">allow_retry</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Set whether a failed asset is retried on the next build pass.</span>
+
+<span class="sd">        See the ``allow_retry`` argument of :class:`~fwirl.Asset`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            asset: The :class:`~fwirl.Asset` to update.</span>
+<span class="sd">            allow_retry: ``True`` to retry failures automatically, ``False``</span>
+<span class="sd">                to keep the asset ``Failed`` until it is manually unpaused.</span>
+<span class="sd">        """</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Setting allow_retry=</span><span class="si">{</span><span class="n">allow_retry</span><span class="si">}</span><span class="s2"> for asset </span><span class="si">{</span><span class="n">asset</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">asset</span><span class="o">.</span><span class="n">allow_retry</span> <span class="o">=</span> <span class="n">allow_retry</span></div>
+
+
 <div class="viewcode-block" id="AssetGraph.unpause_schedule">
 <a class="viewcode-back" href="../../api.html#fwirl.AssetGraph.unpause_schedule">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">unpause_schedule</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schedule_key</span><span class="p">):</span>
@@ -815,6 +831,11 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">unpause_asset</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">"key"</span><span class="p">]</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedules</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">unpause_schedule</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">"key"</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">"type"</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"set_allow_retry"</span><span class="p">:</span>
+            <span class="n">asset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_asset_by_key</span><span class="p">(</span><span class="n">msg</span><span class="p">[</span><span class="s2">"key"</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">asset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"value"</span><span class="p">),</span> <span class="nb">bool</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">set_allow_retry</span><span class="p">(</span><span class="n">asset</span><span class="p">,</span> <span class="n">msg</span><span class="p">[</span><span class="s2">"value"</span><span class="p">])</span>
 
         <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">"type"</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"schedule"</span><span class="p">:</span>
             <span class="n">asset</span> <span class="o">=</span> <span class="kc">None</span>
