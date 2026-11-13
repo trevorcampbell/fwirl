@@ -1,0 +1,51 @@
+name: Badges
+
+# Computes test coverage and docstring (docs) coverage on main and publishes
+# shields.io endpoint JSON files to the `badges` branch for the README.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  badges:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y graphviz graphviz-dev
+
+      - name: Install package and tools
+        run: pip install -e '.[test]' interrogate
+
+      - name: Measure test coverage
+        run: |
+          python -m pytest tests/ -q --cov=fwirl --cov-report=xml || true
+          PCT=$(python -c "import xml.etree.ElementTree as ET; print(float(ET.parse('coverage.xml').getroot().get('line-rate')) * 100)")
+          mkdir -p badges
+          python .github/scripts/make_badge.py coverage "$PCT" badges/coverage.json
+
+      - name: Measure docs coverage
+        run: |
+          PCT=$(interrogate fwirl | grep -o 'actual: [0-9.]*' | cut -d' ' -f2)
+          python .github/scripts/make_badge.py "docs coverage" "$PCT" badges/docs-coverage.json
+
+      - name: Publish badges branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan badges-new
+          git rm -rf --cached . > /dev/null
+          git add -f badges/*.json
+          git commit -m "Update badges for ${GITHUB_SHA}"
+          git push --force origin badges-new:badges

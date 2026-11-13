@@ -1,5 +1,12 @@
 # fwirl
 
+[![Build](https://img.shields.io/github/actions/workflow/status/briank-git/fwirl/tests.yml?branch=main&label=build)](https://github.com/briank-git/fwirl/actions/workflows/tests.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbriank-git/fwirl%2Fbadges%2Fcoverage.json)](https://github.com/briank-git/fwirl/actions/workflows/badges.yml)
+[![Version](https://img.shields.io/pypi/v/fwirl?label=version)](https://pypi.org/project/fwirl/)
+[![Dependencies](https://img.shields.io/librariesio/release/pypi/fwirl?label=dependencies)](https://libraries.io/pypi/fwirl)
+[![SemVer](https://img.shields.io/github/actions/workflow/status/briank-git/fwirl/semver.yml?branch=main&label=semver%202.0.0)](https://semver.org/)
+[![Docs coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbriank-git/fwirl%2Fbadges%2Fdocs-coverage.json)](https://github.com/briank-git/fwirl/actions/workflows/badges.yml)
+
 fwirl is a lightweight Python library for building and maintaining collections of **assets** (files, records, objects, etc.) with dependency tracking, stale detection, scheduling, and optional remote control.
 
 **Note:** LLMs were used to generate the package documentation, unit test suite, and much of the web UI. While the package is still in early unstable development, this may introduce bugs on `main`. 
