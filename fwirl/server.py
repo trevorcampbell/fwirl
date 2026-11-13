@@ -166,6 +166,65 @@ def dashboard_html(graph_key):
       pointer-events: none;
       display: none;
     }}
+    #graph-search {{
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }}
+    #graph-search input {{
+      width: 280px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      padding: 5px 8px;
+      background: var(--input-bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+    }}
+    #graph-search-help {{ position: relative; display: inline-flex; }}
+    #graph-search-help button {{
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: help;
+    }}
+    #graph-search-tooltip {{
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      width: 300px;
+      padding: 10px 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text);
+    }}
+    #graph-search-tooltip p {{ margin: 0 0 6px; }}
+    #graph-search-tooltip ul {{ margin: 0 0 6px; padding-left: 18px; }}
+    #graph-search-tooltip code {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
+    #graph-search-help:hover #graph-search-tooltip,
+    #graph-search-help:focus-within #graph-search-tooltip {{ display: block; }}
+    #graph-search-count {{ color: var(--muted); font-size: 12px; white-space: nowrap; }}
     #assets-table {{ flex: 1; min-height: 280px; }}
     .resizer {{
       background: var(--resizer);
@@ -258,6 +317,25 @@ def dashboard_html(graph_key):
         <div id="graph-wrap">
           <div id="graph"></div>
           <div id="selection-box"></div>
+          <div id="graph-search">
+            <input id="graph-search-input" type="search" placeholder="key  status=  group=  subgroup=  allow_retry=" autocomplete="off" aria-label="Search assets" />
+            <span id="graph-search-count"></span>
+            <span id="graph-search-help">
+              <button type="button" aria-label="Search help" aria-describedby="graph-search-tooltip">?</button>
+              <div id="graph-search-tooltip" role="tooltip">
+                <p>Selects assets matching every space-separated term.</p>
+                <ul>
+                  <li><code>text</code> &mdash; key contains the text</li>
+                  <li><code>status=</code> &mdash; exact status</li>
+                  <li><code>group=</code> / <code>subgroup=</code> &mdash; exact group / subgroup</li>
+                  <li><code>allow_retry=true</code> or <code>false</code></li>
+                </ul>
+                <p>Matching is case-insensitive. Repeating a filter matches either value.</p>
+                <p>Example: <code>string status=failed group=etl</code></p>
+                <p>Enter re-runs, Shift+Enter adds to the selection, Esc clears.</p>
+              </div>
+            </span>
+          </div>
         </div>
       </div>
       <div id="vertical-resizer" class="resizer vertical"></div>
@@ -404,19 +482,100 @@ def dashboard_html(graph_key):
 
     network.on("click", (params) => {{
       if (boxSelection) return;
+      const src = params.event && params.event.srcEvent;
+      const additive = !!(src && src.shiftKey);
+      const subtractive = !!(src && (src.ctrlKey || src.metaKey));
       if (params.nodes.length === 0) {{
-        setSelectedAssets([]);
+        if (!additive && !subtractive) setSelectedAssets([]);
         return;
       }}
       const id = params.nodes[0];
       if (network.isCluster(id)) return;
-      setSelectedAssets([id]);
+      if (subtractive) {{
+        setSelectedAssets(selectedAssets.filter((key) => key !== id));
+      }} else if (additive) {{
+        setSelectedAssets([...selectedAssets, id]);
+      }} else {{
+        setSelectedAssets([id]);
+      }}
+    }});
+
+    // On macOS, ctrl+click fires "contextmenu" instead of "click", so handle it here.
+    graphWrap.addEventListener("contextmenu", (event) => {{
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      const rect = graphWrap.getBoundingClientRect();
+      const id = network.getNodeAt({{ x: event.clientX - rect.left, y: event.clientY - rect.top }});
+      if (id && !network.isCluster(id)) {{
+        setSelectedAssets(selectedAssets.filter((key) => key !== id));
+      }}
     }});
 
     network.on("doubleClick", (params) => {{
       if (params.nodes.length === 0) return;
       const id = params.nodes[0];
       if (network.isCluster(id)) network.openCluster(id);
+    }});
+
+    const searchBox = document.getElementById("graph-search");
+    const searchInput = document.getElementById("graph-search-input");
+    const searchCount = document.getElementById("graph-search-count");
+    searchBox.addEventListener("mousedown", (event) => event.stopPropagation());
+    searchBox.addEventListener("wheel", (event) => event.stopPropagation());
+    searchBox.addEventListener("contextmenu", (event) => event.stopPropagation());
+
+    const SEARCH_FIELDS = ["allow_retry", "status", "group", "subgroup"];
+
+    // Space-delimited tokens. "field=value" tokens filter on that field (repeated
+    // fields are OR-ed); all other tokens are substrings of the key. Everything is AND-ed.
+    function parseSearchQuery(text) {{
+      const terms = [];
+      const filters = {{}};
+      for (const token of text.trim().toLowerCase().split(/\\s+/)) {{
+        if (!token) continue;
+        const eq = token.indexOf("=");
+        const field = eq > 0 ? token.slice(0, eq) : "";
+        if (SEARCH_FIELDS.includes(field)) {{
+          const value = token.slice(eq + 1);
+          if (value) (filters[field] = filters[field] || []).push(value);
+        }} else if (!SEARCH_FIELDS.some((f) => token === `${{f}}=`)) {{
+          terms.push(token);
+        }}
+      }}
+      return {{ terms, filters }};
+    }}
+
+    function nodeMatchesSearch(node, terms, filters) {{
+      const key = String(node.key).toLowerCase();
+      if (!terms.every((term) => key.includes(term))) return false;
+      return Object.entries(filters).every(([field, values]) =>
+        values.includes(String(node[field] ?? "").toLowerCase())
+      );
+    }}
+
+    function searchAssets(additive) {{
+      const {{ terms, filters }} = parseSearchQuery(searchInput.value);
+      if (terms.length === 0 && Object.keys(filters).length === 0) {{
+        searchCount.textContent = "";
+        if (!additive) setSelectedAssets([]);
+        return;
+      }}
+      const matches = (latestSnapshot?.nodes || [])
+        .filter((node) => nodeMatchesSearch(node, terms, filters))
+        .map((node) => node.key);
+      searchCount.textContent = `${{matches.length}} match${{matches.length === 1 ? "" : "es"}}`;
+      setSelectedAssets(additive ? [...selectedAssets, ...matches] : matches);
+    }}
+
+    searchInput.addEventListener("input", () => searchAssets(false));
+    searchInput.addEventListener("keydown", (event) => {{
+      if (event.key === "Enter") {{
+        searchAssets(event.shiftKey);
+      }} else if (event.key === "Escape") {{
+        searchInput.value = "";
+        searchAssets(false);
+        searchInput.blur();
+      }}
     }});
 
     graphWrap.addEventListener("mousedown", (event) => {{
@@ -444,9 +603,18 @@ def dashboard_html(graph_key):
       if (!boxSelection) return;
       boxSelection.current = point;
       const selected = nodesWithinSelection(boxSelection);
+      const finishedBox = boxSelection;
       boxSelection = null;
       selectionBox.style.display = "none";
-      setSelectedAssets(selected);
+      const isDrag = Math.abs(finishedBox.current.x - finishedBox.start.x) >= 2
+        || Math.abs(finishedBox.current.y - finishedBox.start.y) >= 2;
+      if (event.shiftKey) {{
+        if (isDrag) setSelectedAssets([...selectedAssets, ...selected]);
+      }} else if (event.ctrlKey || event.metaKey) {{
+        if (isDrag) setSelectedAssets(selectedAssets.filter((key) => !selected.includes(key)));
+      }} else {{
+        setSelectedAssets(selected);
+      }}
     }});
 
     function drawSelectionBox() {{
